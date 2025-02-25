@@ -23,6 +23,8 @@
     End Sub
 
     Private Sub currentExplorer_SelectionChange() Handles currentExplorer.SelectionChange
+        If mailThreadPane Is Nothing OrElse customTaskPane Is Nothing Then Return
+
         If currentExplorer.Selection.Count > 0 Then
             Dim selection As Object = currentExplorer.Selection(1)
             If TypeOf selection Is Outlook.MailItem Then
@@ -35,6 +37,20 @@
                 If appointment.GlobalAppointmentID IsNot Nothing Then
                     mailThreadPane.UpdateMailList(appointment.GlobalAppointmentID, appointment.EntryID)
                 End If
+            ElseIf TypeOf selection Is Outlook.MeetingItem Then
+                Dim meeting As Outlook.MeetingItem = DirectCast(selection, Outlook.MeetingItem)
+                'Dim associatedMail As Outlook.MailItem = meeting.GetAssociatedItem()
+                'If associatedMail IsNot Nothing Then
+                mailThreadPane.UpdateMailList(String.Empty, meeting.EntryID)
+                'End If
+            ElseIf TypeOf selection Is Outlook.TaskItem Then
+                Dim task As Outlook.TaskItem = DirectCast(selection, Outlook.TaskItem)
+                'If task.ConversationID IsNot Nothing Then
+                    mailThreadPane.UpdateMailList(String.Empty, task.EntryID)
+                'End If
+            ElseIf TypeOf selection Is Outlook.ContactItem Then
+                Dim contact As Outlook.ContactItem = DirectCast(selection, Outlook.ContactItem)
+                mailThreadPane.UpdateMailList(String.Empty, contact.EntryID)
             End If
         End If
     End Sub

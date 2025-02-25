@@ -16,67 +16,6 @@ Public Class MailHandler
         Return String.Empty
     End Function
 
-    Public Shared Sub LoadConversationMails(lvMails As ListView, currentMailEntryID As String)
-        lvMails.BeginUpdate()
-        Try
-            lvMails.Items.Clear()
-            Dim currentItem As Object = Globals.ThisAddIn.Application.Session.GetItemFromID(currentMailEntryID)
-            Dim conversation As Conversation = Nothing
-
-            If TypeOf currentItem Is MailItem Then
-                conversation = DirectCast(currentItem, MailItem).GetConversation()
-            ElseIf TypeOf currentItem Is AppointmentItem Then
-                conversation = DirectCast(currentItem, AppointmentItem).GetConversation()
-            End If
-
-            If conversation IsNot Nothing Then
-                Dim table As Table = conversation.GetTable()
-                table.Columns.Add("EntryID")
-                table.Columns.Add("SentOn")
-                table.Columns.Add("SenderName")
-                table.Columns.Add("Subject")
-                table.Sort("[SentOn]", False)
-
-                Dim items As New List(Of ListViewItem)()
-                Dim highlightIndex As Integer = -1
-
-                Do Until table.EndOfTable
-                    Dim row As Row = table.GetNextRow()
-                    Dim mailItem As Object = Globals.ThisAddIn.Application.Session.GetItemFromID(row("EntryID").ToString())
-                    Dim entryId As String = GetPermanentEntryID(mailItem)
-
-                    Dim lvi As New ListViewItem With {
-                        .Text = If(row("SentOn") IsNot Nothing,
-                                 DateTime.Parse(row("SentOn").ToString()).ToString("yyyy-MM-dd HH:mm"),
-                                 "Unknown Date"),
-                        .Tag = entryId
-                    }
-                    lvi.SubItems.Add(If(row("SenderName") IsNot Nothing, row("SenderName").ToString(), "Unknown Sender"))
-                    lvi.SubItems.Add(If(row("Subject") IsNot Nothing, row("Subject").ToString(), "Unknown Subject"))
-
-                    If String.Equals(entryId, currentMailEntryID.Trim(), StringComparison.OrdinalIgnoreCase) Then
-                        lvi.BackColor = System.Drawing.Color.FromArgb(255, 255, 200)
-                        lvi.Font = New System.Drawing.Font(lvMails.Font, System.Drawing.FontStyle.Bold)
-                        highlightIndex = items.Count
-                    End If
-
-                    items.Add(lvi)
-                Loop
-
-                lvMails.Items.AddRange(items.ToArray())
-
-                If highlightIndex >= 0 Then
-                    lvMails.Items(highlightIndex).Selected = True
-                    lvMails.Items(highlightIndex).EnsureVisible()
-                End If
-            End If
-        Catch ex As System.Exception
-            Debug.WriteLine($"LoadConversationMails error: {ex.Message}")
-        Finally
-            lvMails.EndUpdate()
-        End Try
-    End Sub
-
     Public Shared Sub UpdateHighlight(lvMails As ListView, currentMailEntryID As String)
         lvMails.BeginUpdate()
         Try
@@ -99,20 +38,36 @@ Public Class MailHandler
         End Try
     End Sub
 
+    Private Shared Function GetTaskStatus(status As OlTaskStatus) As String
+        Select Case status
+            Case OlTaskStatus.olTaskComplete
+                Return "已完成"
+            Case OlTaskStatus.olTaskDeferred
+                Return "已推迟"
+            Case OlTaskStatus.olTaskInProgress
+                Return "进行中"
+            Case OlTaskStatus.olTaskNotStarted
+                Return "未开始"
+            Case OlTaskStatus.olTaskWaiting
+                Return "等待中"
+            Case Else
+                Return "未知状态"
+        End Select
+    End Function
     Public Shared Function DisplayMailContent(mailEntryID As String) As String
         Try
             Dim mail As Object = Globals.ThisAddIn.Application.Session.GetItemFromID(mailEntryID)
 
             If TypeOf mail Is MailItem Then
                 Dim mailItem As MailItem = DirectCast(mail, MailItem)
-                Return $"<html><body style='font-family: Arial; padding: 10px;'>" &
-                       $"<h3>{mailItem.Subject}</h3>" &
-                       $"<div style='margin-bottom: 10px;'>" &
-                       $"<strong>发件人:</strong> {mailItem.SenderName}<br/>" &
-                       $"<strong>时间:</strong> {mailItem.ReceivedTime:yyyy-MM-dd HH:mm:ss}" &
+                Return $"<html><body style='font-family: Arial; padding: 10px; Font-size=12px;'>" &
+                       $"<h3>{If(String.IsNullOrEmpty(mailItem.Subject), "无主题", mailItem.Subject)}</h3>" &
+                       $"<div style='margin-bottom: 10px;Font-size=12px;'>" &
+                       $"<strong>发件人:</strong> {If(String.IsNullOrEmpty(mailItem.SenderName), "未知", mailItem.SenderName)}<br/>" &
+                       $"<strong>时间:</strong> {If(mailItem.ReceivedTime = DateTime.MinValue, "未知", mailItem.ReceivedTime.ToString("yyyy-MM-dd HH:mm:ss"))}" &
                        $"</div>" &
                        $"<div style='border-top: 1px solid #ccc; padding-top: 10px;' onclick='handleLinks(event)'>" &
-                       $"{mailItem.HTMLBody}" &
+                       $"{If(String.IsNullOrEmpty(mailItem.HTMLBody), "", mailItem.HTMLBody)}" &
                        $"</div>" &
                        $"<script>" &
                        "function handleLinks(e) {" &
@@ -125,15 +80,83 @@ Public Class MailHandler
                        "</body></html>"
             ElseIf TypeOf mail Is AppointmentItem Then
                 Dim appointment As AppointmentItem = DirectCast(mail, AppointmentItem)
-                Return $"<html><body style='font-family: Arial; padding: 10px;'>" &
-                       $"<h3>{appointment.Subject}</h3>" &
-                       $"<div style='margin-bottom: 10px;'>" &
-                       $"<strong>开始时间:</strong> {appointment.Start:yyyy-MM-dd HH:mm:ss}<br/>" &
-                       $"<strong>结束时间:</strong> {appointment.End:yyyy-MM-dd HH:mm:ss}" &
+                Return $"<html><body style='font-family: Arial; padding: 10px;Font-size=12px;'>" &
+                       $"<h3>{If(String.IsNullOrEmpty(appointment.Subject), "无主题", appointment.Subject)}</h3>" &
+                       $"<div style='margin-bottom: 10px;Font-size=12px;'>" &
+                       $"<strong>组织者:</strong> {If(String.IsNullOrEmpty(appointment.Organizer), "未知", appointment.Organizer)}<br/>" &
+                       $"<strong>开始时间:</strong> {If(appointment.Start = DateTime.MinValue, "未设置", appointment.Start.ToString("yyyy-MM-dd HH:mm:ss"))}<br/>" &
+                       $"<strong>结束时间:</strong> {If(appointment.End = DateTime.MinValue, "未设置", appointment.End.ToString("yyyy-MM-dd HH:mm:ss"))}<br/>" &
+                       $"<strong>地点:</strong> {If(String.IsNullOrEmpty(appointment.Location), "未设置", appointment.Location)}" &
                        $"</div>" &
-                       $"<div style='border-top: 1px solid #ccc; padding-top: 10px;'>" &
-                       $"{appointment.Body}" &
+                       $"<div style='border-top: 1px solid #ccc; padding-top: 10px;Font-size=12px;'>" &
+                       $"{If(String.IsNullOrEmpty(appointment.Body), "", appointment.Body.Replace(vbCrLf, "<br>").Replace("<br><br>", "<br>"))}" &
                        $"</div></body></html>"
+            ElseIf TypeOf mail Is TaskItem Then
+                Dim task As TaskItem = DirectCast(mail, TaskItem)
+                Return $"<html><body style='font-family: Arial; padding: 10px;Font-size=12px;'>" &
+                       $"<h3>{If(String.IsNullOrEmpty(task.Subject), "无主题", task.Subject)}</h3>" &
+                       $"<div style='margin-bottom: 10px;Font-size=12px;'>" &
+                       $"<strong>开始时间:</strong> {If(task.StartDate = DateTime.MinValue, "未设置", task.StartDate.ToString("yyyy-MM-dd HH:mm:ss"))}<br/>" &
+                       $"<strong>结束时间:</strong> {If(task.DueDate = DateTime.MinValue, "未设置", task.DueDate.ToString("yyyy-MM-dd HH:mm:ss"))}<br/>" &
+                       $"<strong>完成度:</strong> {task.PercentComplete}%<br/>" &
+                       $"<strong>状态:</strong> {GetTaskStatus(task.Status)}" &
+                       $"</div>" &
+                       $"<div style='border-top: 1px solid #ccc; padding-top: 10px;Font-size=12px;'>" &
+                       $"{If(String.IsNullOrEmpty(task.Body), "", task.Body.Replace(vbCrLf, "<br>").Replace("<br><br>", "<br>"))}" &
+                       $"</div></body></html>"
+            ElseIf TypeOf mail Is MeetingItem Then
+                Dim meeting As MeetingItem = DirectCast(mail, MeetingItem)
+
+                ' 获取关联的约会项目以获取时间信息
+                Dim associatedAppointment As AppointmentItem = meeting.GetAssociatedAppointment(False)
+
+                ' 获取会议状态信息
+                Dim meetingStatus As String = "会议邀请"
+                Select Case meeting.MessageClass
+                    Case "IPM.Schedule.Meeting.Canceled"
+                        meetingStatus = "会议已取消"
+                        Return "<html><body><p>会议已取消, 无法显示内容</p></body></html>"
+                    Case "IPM.Schedule.Meeting.Request"
+                        meetingStatus = "会议邀请"
+                    Case "IPM.Schedule.Meeting.Resp.Pos"
+                        meetingStatus = "已接受"
+                    Case "IPM.Schedule.Meeting.Resp.Neg"
+                        meetingStatus = "已拒绝"
+                    Case "IPM.Schedule.Meeting.Resp.Tent"
+                        meetingStatus = "暂定"
+                End Select
+
+
+                Return $"<html><body style='font-family: Arial; padding: 10px;Font-size=12px;'>" &
+                       $"<h3>{If(String.IsNullOrEmpty(meeting.Subject), "无主题", meeting.Subject)}</h3>" &
+                       $"<div style='margin-bottom: 10px;Font-size=12px;'>" &
+                       $"<strong>状态:</strong> {meetingStatus}<br/>" &
+                       $"<strong>发件人:</strong> {If(String.IsNullOrEmpty(meeting.SenderName), "未知", meeting.SenderName)}<br/>" &
+                       $"<strong>开始时间:</strong> {If(associatedAppointment IsNot Nothing AndAlso associatedAppointment.Start <> DateTime.MinValue,
+                                                      associatedAppointment.Start.ToString("yyyy-MM-dd HH:mm:ss"),
+                                                      "未设置")}<br/>" &
+                       $"<strong>结束时间:</strong> {If(associatedAppointment IsNot Nothing AndAlso associatedAppointment.End <> DateTime.MinValue,
+                                                      associatedAppointment.End.ToString("yyyy-MM-dd HH:mm:ss"),
+                                                      "未设置")}<br/>" &
+                       $"<strong>地点:</strong> {If(associatedAppointment IsNot Nothing AndAlso Not String.IsNullOrEmpty(associatedAppointment.Location),
+                                                 associatedAppointment.Location,
+                                                 "未设置")}" &
+                       $"</div>" &
+                       $"<div style='border-top: 1px solid #ccc; padding-top: 10px;Font-size=12px;'>" &
+                       $"{If(String.IsNullOrEmpty(meeting.Body), "", meeting.Body.Replace(vbCrLf, "<br>").Replace(" <br><br>", "<br>"))}" &
+                       $"</div></body></html>"
+
+                If 0 Then
+                    Return $"<html><body style='font-family: Arial; padding: 10px;Font-size=12px;'>" &
+                       $"<h3>{meeting.Subject}</h3>" &
+                       $"<div style='margin-bottom: 10px;Font-size=12px;'>" &
+                       $"<strong>开始时间:</strong> {meeting.Start:yyyy-MM-dd HH:mm:ss}<br/>" &
+                       $"<strong>结束时间:</strong> {meeting.End:yyyy-MM-dd HH:mm:ss}" &
+                       $"</div>" &
+                       $"<div style='border-top: 1px solid #ccc; padding-top: 10px;Font-size=12px;'>" &
+                       $"{meeting.HTMLBody.Replace(vbCrLf, "<br>").Replace(" <br><br>", "<br>")}" &
+                       $"</div></body></html>"
+                End If
             End If
         Catch ex As System.Exception
             Debug.WriteLine($"显示邮件内容时出错: {ex.Message}")

@@ -51,7 +51,7 @@
         Me.Group1.Name = "Group1"
 
         'ToggleButton1
-        Me.ToggleButton1.Label = "显示/隐藏面板"
+        Me.ToggleButton1.Label = "ShowPane"
         Me.ToggleButton1.Name = "ToggleButton1"
         Me.ToggleButton1.ScreenTip = "切换邮件会话面板的显示状态"
 

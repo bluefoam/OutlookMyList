@@ -25,9 +25,8 @@ Public Class MailThreadPane
     Private btnPanel As Panel
     Private currentConversationId As String = String.Empty
     Private currentMailEntryID As String = String.Empty
-    Private currentHighlightIndex As Integer = -1  ' Add this line
-    ' 删除这行，因为已经使用 mailItems 了
-    Private mailIndexMap As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
+    Private currentHighlightEntryID As String
+
     Private mailItems As New List(Of (Index As Integer, EntryID As String))  ' 移到这里
     ' 删除原来的 mailIndexMap
 
@@ -493,7 +492,7 @@ Public Class MailThreadPane
             Debug.WriteLine($"设置 ObjectForScripting 失败: {ex.Message}")
         End Try
 
-        Dim htmlContent As String = $"<html><body style='font-family: Arial; padding: 10px;'>" &
+        Dim htmlContent As String = $"<html><body style='font-family: Arial; padding: 10px; font-size: 12px;'>" &
                                   $"<div id='entryId' style='margin-bottom: 10px;'></div>" &
                                   $"<div><a href='https://www.wolai.com/autolab/pLEYWMtYy4xFRzTyLEewrX' target='_blank' " &
                                   $"onclick='window.open(this.href); return false;'>所有笔记</a></div>" &
@@ -643,7 +642,7 @@ Public Class MailThreadPane
                     If rows IsNot Nothing AndAlso rows.HasValues Then
                         ' 构建 HTML 表格
                         Dim htmlContent As New StringBuilder()
-                        htmlContent.AppendLine("<html><body style='font-family: Arial; padding: 10px;'>")
+                        htmlContent.AppendLine("<html><body style='font-family: Arial; padding: 10px; font-size: 12px;'>")
                         'htmlContent.AppendLine("<h3>已存在的笔记记录：</h3>")
                         htmlContent.AppendLine("<table style='width: 100%; border-collapse: collapse; margin-bottom: 20px;'>")
                         htmlContent.AppendLine("<tr style='background-color: #f2f2f2;'>")
@@ -698,25 +697,32 @@ Public Class MailThreadPane
 
                         ' 遍历会话中的所有邮件
                         Do Until table.EndOfTable
-                            Dim row As Outlook.Row = table.GetNextRow()
-                            Dim mailItem As Outlook.MailItem = DirectCast(Globals.ThisAddIn.Application.Session.GetItemFromID(row("EntryID").ToString()), Outlook.MailItem)
-
-                            If mailItem IsNot Nothing Then
-                                Dim wolaiProp = mailItem.UserProperties.Find("WolaiNoteLink")
-                                If wolaiProp IsNot Nothing Then
-                                    Dim wolaiLink = wolaiProp.Value.ToString()
-                                    Debug.WriteLine($"从邮件属性中找到 Wolai 链接: {wolaiLink}")
-                                    ' 避免重复添加相同的链接
-                                    If Not noteList.Any(Function(n) n.Link = wolaiLink) Then
-                                        noteList.Add((DateTime.Now.ToString("yyyy-MM-dd HH:mm"), mailItem.Subject, wolaiLink))
+                            Try
+                                Dim row As Outlook.Row = table.GetNextRow()
+                                '使用 TryCast 安全地转换类型
+                                Dim item As Object = Globals.ThisAddIn.Application.Session.GetItemFromID(row("EntryID").ToString())
+                                ' 是否要判断类型?
+                                Dim mailItem As Outlook.MailItem = TryCast(item, Outlook.MailItem)
+                                If mailItem IsNot Nothing Then
+                                    Dim wolaiProp = mailItem.UserProperties.Find("WolaiNoteLink")
+                                    If wolaiProp IsNot Nothing Then
+                                        Dim wolaiLink = wolaiProp.Value.ToString()
+                                        Debug.WriteLine($"从邮件属性中找到 Wolai 链接: {wolaiLink}")
+                                        ' 避免重复添加相同的链接
+                                        If Not noteList.Any(Function(n) n.Link = wolaiLink) Then
+                                            noteList.Add((DateTime.Now.ToString("yyyy-MM-dd HH:mm"), mailItem.Subject, wolaiLink))
+                                        End If
                                     End If
                                 End If
-                            End If
+                            Catch ex As System.Exception
+                                Debug.WriteLine($"处理邮件项是否wolai链接时出错: {ex.Message}")
+                                Continue Do
+                            End Try
                         Loop
                     End If
                 End If
             Catch ex As System.Exception
-                Debug.WriteLine($"检查邮件属性时出错: {ex.Message}")
+                Debug.WriteLine($"检查邮件属性时出错??: {ex.Message}")
             End Try
 
             ' 如果邮件属性中没有找到，且网络可用，则进行网络查询
@@ -942,7 +948,7 @@ Public Class MailThreadPane
         If Not String.IsNullOrEmpty(currentConversationId) Then
             Dim mailItem As Object = Globals.ThisAddIn.Application.Session.GetItemFromID(currentMailEntryID)
             Dim subject As String = ""
-            
+
             If mailItem IsNot Nothing AndAlso TypeOf mailItem Is MailItem Then
                 subject = DirectCast(mailItem, MailItem).Subject
             End If
@@ -950,98 +956,6 @@ Public Class MailThreadPane
         Else
             MessageBox.Show("请先选择一封邮件")
         End If
-    End Sub
-
-    Private Sub SaveToWolai1(conversationId As String, conversationTitle As String)
-        Try
-            If infoWebBrowser.Document Is Nothing Then
-                MessageBox.Show("WebBrowser 控件未准备就绪")
-                Return
-            End If
-
-            Dim testScript As String = "
-                function testFetch() {
-                    return fetch('https://openapi.wolai.com/v1/token', {
-                        'method': 'GET'
-                    })
-                    .then(response => 'Fetch API 可用')
-                    .catch(error => 'Fetch API 不可用: ' + error);
-                }
-                testFetch().then(result => console.log(result));"
-
-            ExecuteJavaScript(testScript)
-            Debug.WriteLine($"JavaScript测试通过")
-
-            ' 添加调试信息
-            Debug.WriteLine($"开始执行保存操作 - 会话ID: {conversationId}, 标题: {conversationTitle}")
-
-            Dim script As String = "javascript:(function (){" &
-            "var newDiv = window.document.createElement('div');" &
-            "newDiv.style.position = 'fixed';" &
-            "newDiv.style.top = '10px';" &
-            "newDiv.style.right = '10px';" &
-            "newDiv.style.width = '200px';" &
-            "newDiv.style.textAlign = 'center';" &
-            "newDiv.style.height = '60px';" &
-            "newDiv.style.padding = '10px';" &
-            "newDiv.style.backgroundColor = 'white';" &
-            "newDiv.style.border = '1px solid #ccc';" &
-            "newDiv.style.boxShadow = '0 0 10px rgba(0,0,0,0.1)';" &
-            "newDiv.style.zIndex = '9999';" &
-            "newDiv.innerHTML = '保存到 Wolai 中...';" &
-            "document.body.appendChild(newDiv);" &
-            "login();" &
-            "function login(){" &
-            "var data = {" &
-            "'appId': '2NdHab5WdUG995izevb69b'," &
-            "'appSecret': 'ffa888d4ebd73bae77a77abebcacf80001654b3f19d4ffbbcc3c41cbe0bed645'" &
-            "};" &
-            "fetch('https://openapi.wolai.com/v1/token', {" &
-            "'method': 'POST'," &
-            "'headers': { 'Content-Type': 'application/json' }," &
-            "'body': JSON.stringify(data)" &
-            "})" &
-            ".then(response => response.json())" &
-            ".then(data => {" &
-            "if(data?.data?.app_token) {" &
-            "save(data.data.app_token);" &
-            "}" &
-            "})" &
-            ".catch((error) => { alert('获取令牌失败'); });" &
-            "}" &
-            "function save(token){" &
-            "var title = '" & conversationTitle & "';" &
-            "var url = 'undefined';" &
-            "var ConvetID = '" & conversationId & "';" &
-            "const rows = { 'rows': [{'标题': title, '网址': url, '会话ID': ConvetID}] };" &
-            "fetch('https://openapi.wolai.com/v1/databases/pLEYWMtYy4xFRzTyLEewrX/rows', {" &
-            "'method': 'POST'," &
-            "'headers': { 'Content-Type': 'application/json', 'Authorization': token }," &
-            "'body': JSON.stringify(rows)" &
-            "})" &
-            ".then(response => response.json())" &
-            ".then(data => {" &
-            "console.log('保存成功:', data);" &
-            "newDiv.innerHTML = '保存成功';" &
-            "setTimeout(() => { newDiv.remove(); }, 2000);" &
-            "})" &
-            ".catch((error) => {" &
-            "console.error('保存失败:', error);" &
-            "newDiv.innerHTML = '保存失败: ' + error.message;" &
-            "});" &
-            "}" &
-            "})();"
-
-            Debug.WriteLine($"JavaScript 脚本内容:  {script}")
-
-            ExecuteJavaScript(script)
-            ' 添加执行完成的反馈
-            Debug.WriteLine("JavaScript 脚本已执行")
-
-        Catch ex As System.Exception
-            Debug.WriteLine($"SaveToWolai 执行出错: {ex.Message}")
-            MessageBox.Show($"保存失败: {ex.Message}")
-        End Try
     End Sub
 
     Private Sub BindEvents()
@@ -1062,6 +976,7 @@ Public Class MailThreadPane
                 Return
             End If
 
+
             ' 检查是否需要重新加载列表
             Dim needReload As Boolean = True
             If lvMails.Items.Count > 0 AndAlso Not String.IsNullOrEmpty(conversationId) AndAlso
@@ -1069,37 +984,21 @@ Public Class MailThreadPane
                 needReload = False
             End If
 
+            If Not String.IsNullOrEmpty(mailEntryID) AndAlso String.IsNullOrEmpty(conversationId) Then
+                wbContent.DocumentText = MailHandler.DisplayMailContent(mailEntryID)
+            End If
+
             If needReload Then
                 LoadConversationMails(mailEntryID)
-                Try
-                    Dim mailItem As Object = Globals.ThisAddIn.Application.Session.GetItemFromID(mailEntryID)
-                    If mailItem IsNot Nothing AndAlso TypeOf mailItem Is MailItem Then
-                        ' 只在会话ID变化时更新笔记
-                        Dim newConversationId = DirectCast(mailItem, MailItem).ConversationID
-                        If Not String.Equals(newConversationId, currentConversationId, StringComparison.OrdinalIgnoreCase) Then
-                            currentConversationId = newConversationId
-                            ' 检查并更新笔记链接
-                            Await CheckWolaiRecordAsync(currentConversationId)
-                        End If
-                    ElseIf mailItem IsNot Nothing AndAlso TypeOf mailItem Is AppointmentItem Then
-                        Dim appointment As Outlook.AppointmentItem = DirectCast(mailItem, Outlook.AppointmentItem)
-                        ' 使用GlobalAppointmentID作为会话ID
-                        Dim newConversationId = appointment.GlobalAppointmentID
-                        If Not String.Equals(newConversationId, currentConversationId, StringComparison.OrdinalIgnoreCase) Then
-                            currentConversationId = newConversationId
-                            ' 检查并更新笔记链接
-                            Await CheckWolaiRecordAsync(currentConversationId)
-                        End If
-
-                    End If
-                Catch ex As System.Exception
-                    Debug.WriteLine($"更新会话ID时出错: {ex.Message}")
-                End Try
+                ' 更新当前会话ID并检查笔记
+                If Not String.Equals(conversationId, currentConversationId, StringComparison.OrdinalIgnoreCase) Then
+                    currentConversationId = conversationId
+                    Await CheckWolaiRecordAsync(currentConversationId)
+                End If
             Else
                 ' 只更新高亮和内容
                 wbContent.DocumentText = MailHandler.DisplayMailContent(mailEntryID)
                 UpdateHighlightByEntryID(currentMailEntryID, mailEntryID)
-                currentHighlightIndex = GetIndexByEntryID(mailEntryID)
             End If
         Catch ex As System.Exception
             Debug.WriteLine($"UpdateMailList error: {ex.Message}")
@@ -1111,13 +1010,7 @@ Public Class MailThreadPane
         Return mailItems.FindIndex(Function(x) String.Equals(x.EntryID, entryID.Trim(), StringComparison.OrdinalIgnoreCase))
     End Function
 
-    Private Sub UpdateHighlightByEntryID(oldEntryID As String, newEntryID As String)
-        Dim oldIndex As Integer = If(String.IsNullOrEmpty(oldEntryID), -1, GetIndexByEntryID(oldEntryID))
-        Dim newIndex As Integer = If(String.IsNullOrEmpty(newEntryID), -1, GetIndexByEntryID(newEntryID))
-        UpdateHighlightByMailId(oldIndex, newIndex)
-    End Sub
-
-    ' 在类级别添加字段
+    ' 在listview_Mailist添加构造列表
     Private Sub LoadConversationMails(currentMailEntryID As String)
         lvMails.BeginUpdate()
         Try
@@ -1126,76 +1019,120 @@ Public Class MailThreadPane
             Dim currentItem As Object = Globals.ThisAddIn.Application.Session.GetItemFromID(currentMailEntryID)
             Dim conversation As Outlook.Conversation = Nothing
 
+            'If TypeOf currentItem Is Outlook.MailItem Then
+            '    conversation = DirectCast(currentItem, Outlook.MailItem).GetConversation()
+            'ElseIf TypeOf currentItem Is Outlook.AppointmentItem Then
+            '    conversation = DirectCast(currentItem, Outlook.AppointmentItem).GetConversation()
+            'End If
+
             If TypeOf currentItem Is Outlook.MailItem Then
                 conversation = DirectCast(currentItem, Outlook.MailItem).GetConversation()
+            ElseIf TypeOf currentItem Is Outlook.MeetingItem Then
+                ' 对于会议项目，尝试获取关联的邮件
+                Dim meetingItem = DirectCast(currentItem, Outlook.MeetingItem)
+                ' 获取会议请求的关联邮件
+                'Dim associatedMail As Outlook.MailItem = meetingItem.GetAssociatedItem()
+                'If associatedMail IsNot Nothing Then
+                '    conversation = associatedMail.GetConversation()
+                'End If
             ElseIf TypeOf currentItem Is Outlook.AppointmentItem Then
+                ' 对于约会项目，尝试查找相关的会议请求邮件
                 conversation = DirectCast(currentItem, Outlook.AppointmentItem).GetConversation()
+                'conversation = appointmentItem.ConversationID
+                'If Not String.IsNullOrEmpty(appointmentItem.ConversationID) Then
+                ' 通过会议组织者的邮件来获取会话
+                '    Dim organizer = appointmentItem.Organizer
+                '   If Not String.IsNullOrEmpty(organizer) Then
+                ' 在收件箱中查找相关的会议请求邮件
+                'Dim inbox = Globals.ThisAddIn.Application.Session.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderInbox)
+                'Dim filter = $"[MessageClass]='IPM.Schedule.Meeting.Request' AND [ConversationID]='{appointmentItem.ConversationID}'"
+                'Dim items = inbox.Items.Restrict(filter)
+                'If items.Count > 0 Then
+                '    Dim meetingMail As Outlook.MailItem = items.GetFirst()
+                '    conversation = meetingMail.GetConversation()
+                'End If
+                '    End If
+                'End If
+            ElseIf TypeOf currentItem Is Outlook.TaskItem Then
+                'conversation = currentItem
+            Else
+                'conversation = DirectCast(currentItem, Outlook.MailItem).GetConversation()
             End If
+
+            lvMails.Items.Clear()
+            mailItems.Clear()
 
             If conversation IsNot Nothing Then
                 Dim table As Outlook.Table = conversation.GetTable()
                 table.Columns.Add("EntryID")
                 table.Columns.Add("SentOn")
-                table.Columns.Add("ReceivedTime")  ' 添加接收时间
+                table.Columns.Add("ReceivedTime")
                 table.Columns.Add("SenderName")
                 table.Columns.Add("Subject")
-                table.Columns.Add("MessageClass")  ' 添加消息类型
-                table.Sort("[ReceivedTime]", True)  ' 修改为升序排序（最早的在前）
-                Dim items As New List(Of ListViewItem)()
-                currentHighlightIndex = -1
+                table.Columns.Add("MessageClass")
 
-                ' 先收集所有项目
-                Dim allItems As New List(Of (EntryID As String, ListItem As ListViewItem))
+
+                Dim allItems As New List(Of ListViewItem)
                 Dim tempMailItems As New List(Of (Index As Integer, EntryID As String))
+                Dim currentIndex As Integer = 0
 
+                ' 一次性收集所有数据
                 Do Until table.EndOfTable
                     Dim row As Outlook.Row = table.GetNextRow()
                     Dim mailItem As Object = Globals.ThisAddIn.Application.Session.GetItemFromID(row("EntryID").ToString())
 
-                    ' 跳过会议类型的项目
-                    'If TypeOf mailItem Is Outlook.AppointmentItem Then
-                    '    Continue Do
-                    'End If
+                    ' 检查项目类型，如果是会议类型则跳过  否则似乎影响table sort
+                    If TypeOf mailItem Is Outlook.MeetingItem Then
+                        '    Continue Do  
+                    End If
 
                     Dim entryId As String = GetPermanentEntryID(mailItem)
-                    Dim currentIndex As Integer = allItems.Count
 
-                    ' 创建 ListViewItem，第一列为空（仅显示图标）
-                    Dim lvi As New ListViewItem("") With {
-                        .Tag = currentIndex,
-                        .ImageIndex = GetItemImageIndex(mailItem)  ' 设置图标
+                    ' 创建 ListViewItem
+                    Dim lvi As New ListViewItem(currentIndex.ToString()) With {
+                        .Tag = entryId,
+                        .ImageIndex = GetItemImageIndex(mailItem)
                     }
 
-                    ' 添加时间列（作为排序索引）
-                    Dim timeStr = If(row("ReceivedTime") IsNot Nothing AndAlso Not String.IsNullOrEmpty(row("ReceivedTime").ToString()),
-                                   DateTime.Parse(row("ReceivedTime").ToString()).ToString("yyyy-MM-dd HH:mm"),
-                                   "Unknown Date")
-                    lvi.SubItems.Add(timeStr)
+                    ' 添加所有列
+                    With lvi.SubItems
+                        If TypeOf mailItem Is Outlook.MeetingItem Then
+                            Dim meeting As Outlook.MeetingItem = DirectCast(mailItem, Outlook.MeetingItem)
+                            .Add(meeting.CreationTime.ToString("yyyy-MM-dd HH:mm"))
+                            .Add(meeting.SenderName)
+                            .Add(meeting.Subject)
+                        Else
+                            .Add(If(row("ReceivedTime") IsNot Nothing AndAlso Not String.IsNullOrEmpty(row("ReceivedTime").ToString()),
+                                DateTime.Parse(row("ReceivedTime").ToString()).ToString("yyyy-MM-dd HH:mm"),
+                                "Unknown Date"))
+                            .Add(If(row("SenderName") IsNot Nothing, row("SenderName").ToString(), "Unknown Sender"))
+                            .Add(If(row("Subject") IsNot Nothing, row("Subject").ToString(), "Unknown Subject"))
+                        End If
+                    End With
 
-                    ' 添加其他列
-                    lvi.SubItems.Add(If(row("SenderName") IsNot Nothing, row("SenderName").ToString(), "Unknown Sender"))
-                    lvi.SubItems.Add(If(row("Subject") IsNot Nothing, row("Subject").ToString(), "Unknown Subject"))
-
-                    allItems.Add((entryId, lvi))
+                    ' 添加到临时列表
+                    allItems.Add(lvi)
                     tempMailItems.Add((currentIndex, entryId))
-
-                    ' 检查是否是当前邮件
-                    If String.Equals(entryId, currentMailEntryID.Trim(), StringComparison.OrdinalIgnoreCase) Then
-                        currentHighlightIndex = currentIndex
-                    End If
+                    currentIndex += 1
                 Loop
+
                 ' 清空现有列表
                 lvMails.Items.Clear()
                 mailItems.Clear()
 
                 ' 一次性添加所有项目
-                lvMails.Items.AddRange(allItems.Select(Function(x) x.ListItem).ToArray())
+                lvMails.Items.AddRange(allItems.ToArray())
                 mailItems = tempMailItems
 
-                ' 设置高亮
-                If currentHighlightIndex >= 0 Then
-                    UpdateHighlightByMailId(-1, currentHighlightIndex)
-                End If
+                ' 使用系统内置排序
+                ' 直接设置排序
+                lvMails.Sorting = SortOrder.Descending
+                lvMails.ListViewItemSorter = New ListViewItemComparer(1, SortOrder.Descending)  ' 1 是日期列索引
+                lvMails.Sort()
+
+                ' 设置高亮并确保可见
+                UpdateHighlightByEntryID(String.Empty, currentMailEntryID)
+
             End If
         Finally
             lvMails.EndUpdate()
@@ -1214,7 +1151,7 @@ Public Class MailThreadPane
             Else
                 Return lvMails.SmallImageList.Images.IndexOfKey("other")
             End If
-        Catch ex As system.Exception
+        Catch ex As System.Exception
             Debug.WriteLine($"获取图标索引出错: {ex.Message}")
             Return 0  ' 返回默认索引
         End Try
@@ -1237,57 +1174,31 @@ Public Class MailThreadPane
         SetupControls()
     End Sub
 
-    Private Sub UpdateHighlightByMailId(oldIndex As Integer, newIndex As Integer)
+    Private Sub UpdateHighlightByEntryID(oldEntryID As String, newEntryID As String)
         Try
             lvMails.BeginUpdate()
-
             ' 清除所有项的高亮状态
             For Each item As ListViewItem In lvMails.Items
                 SetItemHighlight(item, False)
             Next
 
             ' 设置新的高亮
-            If newIndex >= 0 AndAlso newIndex < lvMails.Items.Count Then
-                Dim item = lvMails.Items(newIndex)
-                SetItemHighlight(item, True)
-                item.EnsureVisible()
+            If Not String.IsNullOrEmpty(newEntryID) Then
+                ' 直接在 ListView 中查找匹配的项
+                For Each item As ListViewItem In lvMails.Items
+                    If String.Equals(item.Tag.ToString(), newEntryID.Trim(), StringComparison.OrdinalIgnoreCase) Then
+                        SetItemHighlight(item, True)
+                        item.EnsureVisible()
+                        currentHighlightEntryID = newEntryID
+                        Exit For
+                    End If
+                Next
             End If
-
         Finally
             lvMails.EndUpdate()
         End Try
     End Sub
 
-    Private Sub UpdateHighlightByMailId1(oldIndex As Integer, newIndex As Integer)
-        ' 如果索引无效或相同，快速返回
-        If (oldIndex < 0 AndAlso newIndex < 0) OrElse
-               (oldIndex >= lvMails.Items.Count AndAlso newIndex >= lvMails.Items.Count) Then
-            Return
-        End If
-
-        ' 只有在真正需要更新时才使用 BeginUpdate
-        If oldIndex <> newIndex Then
-            lvMails.BeginUpdate()
-        End If
-
-        Try
-            ' 清除旧的高亮
-            If oldIndex >= 0 AndAlso oldIndex < lvMails.Items.Count Then
-                SetItemHighlight(lvMails.Items(oldIndex), False)
-            End If
-
-            ' 设置新的高亮
-            If newIndex >= 0 AndAlso newIndex < lvMails.Items.Count Then
-                Dim item = lvMails.Items(newIndex)
-                SetItemHighlight(item, True)
-                item.EnsureVisible()
-            End If
-        Finally
-            If oldIndex <> newIndex Then
-                lvMails.EndUpdate()
-            End If
-        End Try
-    End Sub
 
     Private Sub SetItemHighlight(item As ListViewItem, isHighlighted As Boolean)
         If isHighlighted Then
@@ -1297,7 +1208,7 @@ Public Class MailThreadPane
         Else
             item.BackColor = SystemColors.Window
             item.Font = normalFont
-            item.Selected = False
+
         End If
     End Sub
     Private Function GetPermanentEntryID(item As Object) As String
@@ -1306,6 +1217,8 @@ Public Class MailThreadPane
                 Return DirectCast(item, Outlook.MailItem).EntryID
             ElseIf TypeOf item Is Outlook.AppointmentItem Then
                 Return DirectCast(item, Outlook.AppointmentItem).EntryID
+            ElseIf TypeOf item Is Outlook.MeetingItem Then
+                Return DirectCast(item, Outlook.MeetingItem).EntryID
             End If
             Return String.Empty
         Catch ex As System.Exception
@@ -1313,72 +1226,126 @@ Public Class MailThreadPane
             Return String.Empty
         End Try
     End Function
+
     Private Sub lvMails_SelectedIndexChanged(sender As Object, e As EventArgs)
         Try
-            If lvMails.SelectedItems.Count = 0 Then
-                Return
-            End If
+            If lvMails.SelectedItems.Count = 0 Then Return
 
+            Dim mailId As String = lvMails.SelectedItems(0).Tag.ToString()
+            If String.IsNullOrEmpty(mailId) Then Return
 
+            ' 更新高亮和内容
+            If Not mailId.Equals(currentMailEntryID, StringComparison.OrdinalIgnoreCase) Then
+                UpdateHighlightByEntryID(currentMailEntryID, mailId)
+                currentMailEntryID = mailId
 
-            Dim selectedIndex As Integer = CInt(lvMails.SelectedItems(0).Tag)
-            If selectedIndex >= 0 AndAlso selectedIndex < mailItems.Count Then
-                Dim mailId As String = mailItems(selectedIndex).EntryID
-                If String.IsNullOrEmpty(mailId) Then
-                    Return
-                End If
-                'Debug.WriteLine($"- EntryID: {mailId}")
-                ' 更新高亮状态
-                UpdateHighlightByMailId(currentHighlightIndex, selectedIndex)
-
-                ' 如果不是同一封邮件，更新内容
-                If Not mailId.Equals(currentMailEntryID, StringComparison.OrdinalIgnoreCase) Then
-                    currentMailEntryID = mailId
+                ' 获取当前选中项的内容
+                Dim currentItem As Object = Globals.ThisAddIn.Application.Session.GetItemFromID(mailId)
+                If TypeOf currentItem Is Outlook.MailItem Then
+                    wbContent.DocumentText = MailHandler.DisplayMailContent(mailId)
+                ElseIf TypeOf currentItem Is Outlook.MeetingItem Then
+                    ' 对于会议项目，尝试获取关联的邮件
+                    'Dim meetingItem = DirectCast(currentItem, Outlook.MeetingItem)
+                    'Dim associatedMail As Outlook.MailItem = meetingItem.GetAssociatedItem()
+                    'If associatedMail IsNot Nothing Then
+                    '    wbContent.DocumentText = MailHandler.DisplayMailContent(associatedMail.EntryID)
+                    'Else
+                    wbContent.DocumentText = MailHandler.DisplayMailContent(mailId)
+                    'End If
+                ElseIf TypeOf currentItem Is Outlook.AppointmentItem Then
+                    ' 对于约会项目，尝试查找相关的会议请求邮件
+                    'Dim appointmentItem = DirectCast(currentItem, Outlook.AppointmentItem)
+                    'Try
+                    '    ' 使用 GetAssociatedAppointment 方法获取关联的会议请求
+                    '    Dim namespace1 = Globals.ThisAddIn.Application.Session
+                    '    Dim inbox = namespace1.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderInbox)
+                    '    ' 使用会议组织者和主题来查找相关邮件
+                    '    Dim filter = $"[MessageClass]='IPM.Schedule.Meeting.Request' AND " &
+                    '               $"[Subject] LIKE '%{appointmentItem.Subject}%' AND " &
+                    '               $"[SenderName] = '{appointmentItem.Organizer}'"
+                    '    Dim items = inbox.Items.Restrict(filter)
+                    '
+                    '    If items.Count > 0 Then
+                    '        Dim meetingMail As Outlook.MailItem = items.GetFirst()
+                    '        wbContent.DocumentText = MailHandler.DisplayMailContent(meetingMail.EntryID)
+                    '    Else
+                    '        wbContent.DocumentText = MailHandler.DisplayMailContent(mailId)
+                    '    End If
+                    'Catch ex As System.Exception
+                    '    Debug.WriteLine($"查找会议邮件时出错: {ex.Message}")
                     wbContent.DocumentText = MailHandler.DisplayMailContent(mailId)
                 End If
-
-                currentHighlightIndex = selectedIndex
+            Else
+                wbContent.DocumentText = MailHandler.DisplayMailContent(mailId)
             End If
         Catch ex As System.Exception
             Debug.WriteLine($"lvMails_SelectedIndexChanged error: {ex.Message}")
         End Try
     End Sub
+
+    Private Class ListViewItemComparer
+        Implements System.Collections.IComparer
+        Implements System.Collections.Generic.IComparer(Of ListViewItem)
+
+        Private columnIndex As Integer
+        Private sortOrder As SortOrder
+
+        Public Sub New(column As Integer, order As SortOrder)
+            columnIndex = column
+            sortOrder = order
+        End Sub
+
+        Public Function Compare(x As Object, y As Object) As Integer Implements System.Collections.IComparer.Compare
+            Return Compare(DirectCast(x, ListViewItem), DirectCast(y, ListViewItem))
+        End Function
+
+        Public Function Compare(x As ListViewItem, y As ListViewItem) As Integer Implements System.Collections.Generic.IComparer(Of ListViewItem).Compare
+            Dim result As Integer
+            If columnIndex = 1 Then ' 日期列
+                Dim dateX As DateTime
+                Dim dateY As DateTime
+                If DateTime.TryParse(x.SubItems(columnIndex).Text, dateX) AndAlso
+                   DateTime.TryParse(y.SubItems(columnIndex).Text, dateY) Then
+                    result = DateTime.Compare(dateX, dateY)
+                Else
+                    result = String.Compare(x.SubItems(columnIndex).Text,
+                                         y.SubItems(columnIndex).Text)
+                End If
+            Else
+                result = String.Compare(x.SubItems(columnIndex).Text,
+                                     y.SubItems(columnIndex).Text)
+            End If
+
+            Return If(sortOrder = SortOrder.Ascending, result, -result)
+        End Function
+    End Class
+
     Private Sub lvMails_ColumnClick(sender As Object, e As ColumnClickEventArgs)
         Try
             Dim lv As ListView = DirectCast(sender, ListView)
 
-            ' 记住当前的 EntryID
-            Dim currentEntryID As String = If(currentHighlightIndex >= 0, mailItems(currentHighlightIndex).EntryID, String.Empty)
-
+            ' 切换排序方向
             lv.Sorting = If(lv.Sorting = SortOrder.Ascending, SortOrder.Descending, SortOrder.Ascending)
-            lv.ListViewItemSorter = New ListViewItemComparer(e.Column, lv.Sorting)
 
-            ' 更新索引映射
-            Dim newMailItems As New List(Of (Index As Integer, EntryID As String))
-            For i As Integer = 0 To lv.Items.Count - 1
-                Dim oldIndex As Integer = CInt(lv.Items(i).Tag)
-                newMailItems.Add((i, mailItems(oldIndex).EntryID))
-                lv.Items(i).Tag = i
-            Next
-            mailItems = newMailItems
-            ' 根据 EntryID 查找新的索引位置
-            If Not String.IsNullOrEmpty(currentEntryID) Then
-                Dim newIndex = mailItems.FindIndex(Function(x) String.Equals(x.EntryID, currentEntryID, StringComparison.OrdinalIgnoreCase))
-                If newIndex >= 0 Then
-                    UpdateHighlightByMailId(currentHighlightIndex, newIndex)
-                    currentHighlightIndex = newIndex
-                End If
+            ' 使用自定义排序器
+            lv.ListViewItemSorter = New ListViewItemComparer(e.Column, lv.Sorting)
+            lv.Sort()
+
+            ' 更新高亮
+            If Not String.IsNullOrEmpty(currentMailEntryID) Then
+                UpdateHighlightByEntryID(String.Empty, currentMailEntryID)
             End If
+
         Catch ex As System.Exception
             Debug.WriteLine($"lvMails_ColumnClick error: {ex.Message}")
         End Try
     End Sub
+
     Private Sub lvMails_DoubleClick(sender As Object, e As EventArgs)
         Try
             If lvMails.SelectedItems.Count > 0 Then
-                Dim index As Integer = CInt(lvMails.SelectedItems(0).Tag)
-                If index >= 0 AndAlso index < mailItems.Count Then
-                    Dim mailId As String = mailItems(index).EntryID
+                Dim mailId As String = lvMails.SelectedItems(0).Tag.ToString()
+                If Not String.IsNullOrEmpty(mailId) Then
                     Dim mailItem As Object = Globals.ThisAddIn.Application.Session.GetItemFromID(mailId)
                     If mailItem IsNot Nothing Then
                         mailItem.Display()
@@ -1389,6 +1356,7 @@ Public Class MailThreadPane
             Debug.WriteLine($"lvMails_DoubleClick error: {ex.Message}")
         End Try
     End Sub
+
     Private Sub TaskList_DoubleClick(sender As Object, e As EventArgs)
         Try
             If taskList.SelectedItems.Count > 0 Then
