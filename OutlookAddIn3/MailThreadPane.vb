@@ -36,20 +36,40 @@ Public Class MailThreadPane
     Private currentHighlightEntryID As String
 
     Private mailItems As New List(Of (Index As Integer, EntryID As String))  ' 移到这里
+
+    ' 在类级别添加一个字典来存储链接和EntryID的映射
+    Private mailLinkMap As New Dictionary(Of String, String)
+
     ' 删除原来的 mailIndexMap
 
     Private Sub SetupControls()
         InitializeSplitContainers()
         SetupMailList()
         SetupMailContent()
-        ' 延迟加载标签页
-        Task.Run(Sub()
-                     Threading.Thread.Sleep(500)  ' 给主界面一些加载时间
-                     Me.Invoke(Sub()
-                                   SetupTabPages()
-                                   BindEvents()
-                               End Sub)
-                 End Sub)
+
+        ' 延迟加载标签页 - 使用Task.Delay替代Thread.Sleep
+        Task.Run(Async Function()
+                     ' 使用Task.Delay代替Thread.Sleep，不会阻塞线程
+                     Await Task.Delay(100)
+                     ' 检查控件是否已经初始化完成
+                     If Me.IsHandleCreated Then
+                         Me.BeginInvoke(Sub()
+                                            SetupTabPages()
+                                            BindEvents()
+                                        End Sub)
+                     Else
+                         ' 如果控件尚未完成初始化，等待控件句柄创建完成
+                         AddHandler Me.HandleCreated, Sub(s, e)
+                                                          Task.Run(Async Function()
+                                                                       Await Task.Delay(50)
+                                                                       Me.BeginInvoke(Sub()
+                                                                                          SetupTabPages()
+                                                                                          BindEvents()
+                                                                                      End Sub)
+                                                                   End Function)
+                                                      End Sub
+                     End If
+                 End Function)
     End Sub
 
     Private Sub InitializeSplitContainers()
@@ -255,10 +275,20 @@ Public Class MailThreadPane
             .OwnerDraw = True  ' 启用自定义绘制
         }
 
-        lvMails.Columns.Add("----", 60)  ' 增加宽度以适应更大的图标
+        lvMails.Columns.Add("----", 40)  ' 增加宽度以适应更大的图标
         lvMails.Columns.Add("日期", 100)
-        lvMails.Columns.Add("发件人", 100)
-        lvMails.Columns.Add("主题", 200)
+        With lvMails.Columns.Add("发件人", 100)
+            .TextAlign = HorizontalAlignment.Left
+        End With
+        With lvMails.Columns.Add("主题", 300)
+            .TextAlign = HorizontalAlignment.Left
+        End With
+
+        ' 设置文本省略模式
+        'For Each column As ColumnHeader In lvMails.Columns
+        '    column.Width = -2  ' 自动调整列宽以适应内容
+        'Next
+
         splitter1.Panel1.Controls.Add(lvMails)
 
         ' 添加绘制事件处理
@@ -636,7 +666,7 @@ Public Class MailThreadPane
 
                     ' 收集最近的邮件
                     For i = folderMails.Count To 1 Step -1
-                        If recentMails.Count >= 20 Then Exit For
+                        If recentMails.Count >= 30 Then Exit For
                         Dim mail = TryCast(folderMails(i), Outlook.MailItem)
                         If mail IsNot Nothing Then
                             recentMails.Add(mail)
@@ -648,13 +678,25 @@ Public Class MailThreadPane
                 End Try
             Next
 
+
+
             info.AppendLine($"邮件往来统计:")
             info.AppendLine($"总邮件数: {mailCount}")
             info.AppendLine("最近邮件:")
 
-            ' 按时间排序并显示最近5封
-            For Each mail In recentMails.OrderByDescending(Function(m) m.ReceivedTime).Take(20)
-                info.AppendLine($"- {mail.ReceivedTime:yyyy-MM-dd HH:mm} {mail.Subject}")
+            ' 清除之前的映射
+            mailLinkMap.Clear()
+
+            ' 按时间排序并显示最近邮件，添加序号
+            Dim sortedMails = recentMails.OrderByDescending(Function(m) m.ReceivedTime).Take(30).ToList()
+            For i As Integer = 0 To sortedMails.Count - 1
+                Dim mail = sortedMails(i)
+                ' 创建唯一的链接ID
+                Dim linkId = $"m_{i + 1}"
+                ' 存储映射关系
+                mailLinkMap(linkId) = mail.EntryID
+                ' 添加序号，使用简短链接ID
+                info.AppendLine($"- [{i + 1}] {mail.ReceivedTime:yyyy-MM-dd HH:mm} http://{linkId} {mail.Subject.Replace("[EXT]", "")}")
             Next
 
             Return info.ToString()  ' 添加返回语句
@@ -668,17 +710,49 @@ Public Class MailThreadPane
     <ComVisible(True)>
     Private Sub infoWebBrowser_Navigating(sender As Object, e As WebBrowserNavigatingEventArgs) Handles infoWebBrowser.Navigating
         Try
+            ' 检查是否是邮件链接
             If e.Url.ToString() <> "about:blank" Then
                 e.Cancel = True  ' 取消 WebBrowser 的默认导航
                 Debug.WriteLine($"正在尝试打开链接: {e.Url}")
-                Process.Start(New ProcessStartInfo With {
-                    .FileName = e.Url.ToString(),
-                    .UseShellExecute = True
-                })
+
+                ' 检查是否是邮件链接
+                If e.Url.ToString().StartsWith("outlook-mail:") Then
+                    Dim mailEntryID = e.Url.ToString().Replace("outlook-mail:", "")
+                    OpenOutlookMail(mailEntryID)
+                Else
+                    ' 普通链接，使用默认浏览器打开
+                    Process.Start(New ProcessStartInfo With {
+                        .FileName = e.Url.ToString(),
+                        .UseShellExecute = True
+                    })
+                End If
             End If
         Catch ex As System.Exception
             Debug.WriteLine($"打开链接出错: {ex.Message}")
             MessageBox.Show("无法打开链接，请手动复制链接地址到浏览器中打开。")
+        End Try
+    End Sub
+
+    ' 添加打开邮件的方法
+    Private Sub OpenOutlookMail(entryID As String)
+        Try
+            ' 使用 Application.CreateItem 方法而不是直接获取项目
+            ' 这可以避免一些 COM 互操作问题
+            Dim mailItem = Globals.ThisAddIn.Application.Session.GetItemFromID(entryID)
+            If mailItem IsNot Nothing Then
+                ' 使用 Try-Finally 确保资源释放
+                Try
+                    mailItem.Display()
+                Finally
+                    ' 释放 COM 对象
+                    If mailItem IsNot Nothing Then
+                        Runtime.InteropServices.Marshal.ReleaseComObject(mailItem)
+                    End If
+                End Try
+            End If
+        Catch ex As System.Exception
+            Debug.WriteLine($"打开邮件出错: {ex.Message}")
+            MessageBox.Show("无法打开邮件，可能已被删除或移动。")
         End Try
     End Sub
 
@@ -726,39 +800,45 @@ Public Class MailThreadPane
             .Dock = DockStyle.Fill
         }
 
+        ' 创建按钮面板
+        Dim buttonPanel As New Panel With {
+            .Dock = DockStyle.Top,
+            .Height = 40
+        }
+
+        ' 使用 RichTextBox 替代 TextBox
+        Dim outputTextBox As New RichTextBox With {
+            .Multiline = True,
+            .ScrollBars = RichTextBoxScrollBars.Vertical,
+            .Dock = DockStyle.Fill,
+            .ReadOnly = True,
+            .DetectUrls = True  ' 启用URL检测
+        }
+
+        ' 添加链接点击事件
+        AddHandler outputTextBox.LinkClicked, AddressOf OutputTextBox_LinkClicked
+
         ' 只创建按钮，不预先创建文本框
         Dim x As Integer = 10
         For i As Integer = 1 To 3
             Dim btn As New Button With {
-                .Text = If(i = 1, "查看联系人信息", $"按钮 {i}"),
-                .Location = New Point(x, 10),
+                .Text = If(i = 1, "联系人信息", $"按钮 {i}"),
+                .Location = New Point(x, 5),
                 .Size = New Size(120, 30)
             }
 
             ' 特别处理第一个按钮 - 延迟初始化
             If i = 1 Then
                 AddHandler btn.Click, Sub(s, e)
-                                          ' 第一次点击时才创建文本框
-                                          If Not btnPanel.Controls.OfType(Of TextBox)().Any() Then
-                                              Dim outputTextBox As New TextBox With {
-                                                .Multiline = True,
-                                                .ScrollBars = ScrollBars.Vertical,
-                                                .Location = New Point(10, 45),
-                                                .Size = New Size(350, 200),
-                                                .ReadOnly = True
-                                            }
-                                              btnPanel.Controls.Add(outputTextBox)
-                                          End If
-                                          ' 获取文本框并执行操作
-                                          Dim textBox = btnPanel.Controls.OfType(Of TextBox)().FirstOrDefault()
-                                          If textBox IsNot Nothing Then
-                                              GetContactInfoHandler(textBox)
-                                          End If
+                                          GetContactInfoHandler(outputTextBox)
                                       End Sub
             Else
                 AddHandler btn.Click, Sub(s, e)
-                                          Dim conversationTitle As String = "获取会话标题的逻辑"
-                                          MessageBox.Show($"当前会话ID: {currentConversationId} 和 标题: {conversationTitle}")
+                                          outputTextBox.Text = "正在获取会话信息..."
+                                          Dim conversationTitle As String = "当前会话"
+                                          outputTextBox.Text = $"当前会话ID: {currentConversationId}" & vbCrLf &
+                                                                $"会话邮件数量: {lvMails.Items.Count}" & vbCrLf &
+                                                                $"当前邮件ID: {currentMailEntryID}"
                                       End Sub
             End If
 
@@ -766,17 +846,122 @@ Public Class MailThreadPane
             x += 125
         Next
 
+        ' 先添加文本框到主面板
+        btnPanel.Controls.Add(outputTextBox)
+        ' 再添加按钮面板到主面板
+        btnPanel.Controls.Add(buttonPanel)
+
         tabPage3.Controls.Add(btnPanel)
         tabControl.TabPages.Add(tabPage3)
     End Sub
 
+    ' 然后修改链接点击事件处理程序
+    Private Sub OutputTextBox_LinkClicked(sender As Object, e As LinkClickedEventArgs)
+        Try
+            ' 检查是否是邮件链接
+            If e.LinkText.StartsWith("http://m_") Then
+                Dim linkId = e.LinkText.Replace("http://", "")
+                If mailLinkMap.ContainsKey(linkId) Then
+                    ' 使用 Control.Invoke 而不是 BeginInvoke
+                    If Me.InvokeRequired Then
+                        Me.Invoke(Sub() SafeOpenOutlookMail(mailLinkMap(linkId)))
+                    Else
+                        SafeOpenOutlookMail(mailLinkMap(linkId))
+                    End If
+                Else
+                    MessageBox.Show("无法找到对应的邮件")
+                End If
+            Else
+                ' 普通链接，使用默认浏览器打开
+                Process.Start(New ProcessStartInfo With {
+                    .FileName = e.LinkText,
+                    .UseShellExecute = True
+                })
+            End If
+        Catch ex As System.Exception
+            Debug.WriteLine($"处理链接点击时出错: {ex.Message}")
+        End Try
+    End Sub
+
+    Private Sub SafeOpenOutlookMail(entryID As String)
+        Try
+            Debug.WriteLine($"尝试打开邮件，EntryID: {If(entryID?.Length > 10, entryID.Substring(0, 10) & "...", "null")}")
+
+            ' 检查EntryID是否有效
+            If String.IsNullOrEmpty(entryID) Then
+                Debug.WriteLine("EntryID为空")
+                Return ' 不显示错误消息
+            End If
+
+            ' 直接使用最简单的方法打开邮件
+            Debug.WriteLine("直接使用简单方法打开邮件")
+
+            ' 获取邮件项并直接显示
+            Dim mailItem = Nothing
+            Try
+                mailItem = Globals.ThisAddIn.Application.Session.GetItemFromID(entryID)
+                If mailItem IsNot Nothing Then
+                    Debug.WriteLine("成功获取邮件项，尝试显示")
+
+                    ' 直接调用Display方法
+                    If TypeOf mailItem Is Outlook.MailItem Then
+                        DirectCast(mailItem, Outlook.MailItem).Display(False)
+                        Debug.WriteLine("邮件显示成功")
+                    ElseIf TypeOf mailItem Is Outlook.AppointmentItem Then
+                        DirectCast(mailItem, Outlook.AppointmentItem).Display(False)
+                        Debug.WriteLine("会议项显示成功")
+                    ElseIf TypeOf mailItem Is Outlook.MeetingItem Then
+                        DirectCast(mailItem, Outlook.MeetingItem).Display(False)
+                        Debug.WriteLine("会议邮件显示成功")
+                    ElseIf TypeOf mailItem Is Outlook.TaskItem Then
+                        DirectCast(mailItem, Outlook.TaskItem).Display(False)
+                        Debug.WriteLine("任务项显示成功")
+                    Else
+                        ' 对于其他类型，尝试通用方法
+                        CallByName(mailItem, "Display", CallType.Method)
+                        Debug.WriteLine("项目显示成功")
+                    End If
+                Else
+                    Debug.WriteLine("GetItemFromID返回空")
+                End If
+            Catch itemEx As System.Exception
+                Debug.WriteLine($"获取或显示邮件项时出错: {itemEx.Message}")
+                ' 捕获错误但不显示给用户
+            Finally
+                If mailItem IsNot Nothing Then
+                    Try
+                        Runtime.InteropServices.Marshal.ReleaseComObject(mailItem)
+                        Debug.WriteLine("已释放邮件COM对象")
+                    Catch releaseEx As System.Exception
+                        Debug.WriteLine($"释放COM对象时出错: {releaseEx.Message}")
+                    End Try
+                End If
+            End Try
+        Catch ex As System.Exception
+            Debug.WriteLine($"安全打开邮件时出错: {ex.Message}")
+            Debug.WriteLine($"错误堆栈: {ex.StackTrace}")
+            ' 不显示错误消息
+        End Try
+    End Sub
+
     ' 将异步逻辑移到单独的方法中
-    Private Async Sub GetContactInfoHandler(outputTextBox As TextBox)
+    ' 将异步逻辑移到单独的方法中
+    Private Async Sub GetContactInfoHandler(outputTextBox As Control)
         Try
             If Me.InvokeRequired Then
-                Me.Invoke(Sub() outputTextBox.Text = "正在收集联系人信息...")
+                Me.Invoke(Sub()
+                              If TypeOf outputTextBox Is TextBox Then
+                                  DirectCast(outputTextBox, TextBox).Text = "正在收集联系人信息..."
+                              ElseIf TypeOf outputTextBox Is RichTextBox Then
+                                  DirectCast(outputTextBox, RichTextBox).Text = "正在收集联系人信息..."
+                              End If
+                          End Sub)
             Else
-                outputTextBox.Text = "正在收集联系人信息..."
+                If TypeOf outputTextBox Is TextBox Then
+                    DirectCast(outputTextBox, TextBox).Text = "正在收集联系人信息..."
+                ElseIf TypeOf outputTextBox Is RichTextBox Then
+                    DirectCast(outputTextBox, RichTextBox).Text = "正在收集联系人信息..."
+                End If
             End If
 
             Dim info = Await GetContactInfoAsync()
@@ -784,23 +969,49 @@ Public Class MailThreadPane
             If Me.InvokeRequired Then
                 Me.Invoke(Sub()
                               If Not String.IsNullOrEmpty(info) Then
-                                  outputTextBox.Text = info
+                                  If TypeOf outputTextBox Is TextBox Then
+                                      DirectCast(outputTextBox, TextBox).Text = info
+                                  ElseIf TypeOf outputTextBox Is RichTextBox Then
+                                      DirectCast(outputTextBox, RichTextBox).Text = info
+                                  End If
                               Else
-                                  outputTextBox.Text = "未能获取联系人信息"
+                                  If TypeOf outputTextBox Is TextBox Then
+                                      DirectCast(outputTextBox, TextBox).Text = "未能获取联系人信息"
+                                  ElseIf TypeOf outputTextBox Is RichTextBox Then
+                                      DirectCast(outputTextBox, RichTextBox).Text = "未能获取联系人信息"
+                                  End If
                               End If
                           End Sub)
             Else
                 If Not String.IsNullOrEmpty(info) Then
-                    outputTextBox.Text = info
+                    If TypeOf outputTextBox Is TextBox Then
+                        DirectCast(outputTextBox, TextBox).Text = info
+                    ElseIf TypeOf outputTextBox Is RichTextBox Then
+                        DirectCast(outputTextBox, RichTextBox).Text = info
+                    End If
                 Else
-                    outputTextBox.Text = "未能获取联系人信息"
+                    If TypeOf outputTextBox Is TextBox Then
+                        DirectCast(outputTextBox, TextBox).Text = "未能获取联系人信息"
+                    ElseIf TypeOf outputTextBox Is RichTextBox Then
+                        DirectCast(outputTextBox, RichTextBox).Text = "未能获取联系人信息"
+                    End If
                 End If
             End If
         Catch ex As System.Exception
             If Me.InvokeRequired Then
-                Me.Invoke(Sub() outputTextBox.Text = $"获取联系人信息时出错: {ex.Message}")
+                Me.Invoke(Sub()
+                              If TypeOf outputTextBox Is TextBox Then
+                                  DirectCast(outputTextBox, TextBox).Text = $"获取联系人信息时出错: {ex.Message}"
+                              ElseIf TypeOf outputTextBox Is RichTextBox Then
+                                  DirectCast(outputTextBox, RichTextBox).Text = $"获取联系人信息时出错: {ex.Message}"
+                              End If
+                          End Sub)
             Else
-                outputTextBox.Text = $"获取联系人信息时出错: {ex.Message}"
+                If TypeOf outputTextBox Is TextBox Then
+                    DirectCast(outputTextBox, TextBox).Text = $"获取联系人信息时出错: {ex.Message}"
+                ElseIf TypeOf outputTextBox Is RichTextBox Then
+                    DirectCast(outputTextBox, RichTextBox).Text = $"获取联系人信息时出错: {ex.Message}"
+                End If
             End If
             Debug.WriteLine($"获取联系人信息时出错: {ex.Message}")
         End Try
@@ -913,11 +1124,11 @@ Public Class MailThreadPane
             End Try
 
             ' 如果邮件属性中没有找到，且网络可用，则进行网络查询
-            If Not IsNetworkAvailable() Then
-                Debug.WriteLine("网络不可用，跳过网络查询")
-                UpdateNoteList(noteList)
-                Return String.Empty
-            End If
+            'If Not IsNetworkAvailable() Then
+            '    Debug.WriteLine("网络不可用，跳过网络查询")
+            UpdateNoteList(noteList)
+            Return String.Empty
+            'End If
 
             Using client As New HttpClient()
                 ' 获取 token
@@ -1181,14 +1392,81 @@ Public Class MailThreadPane
 
     End Sub
 
-    Public Async Sub UpdateMailList(conversationId As String, mailEntryID As String)
-        If lvMails Is Nothing Then
-            SetupControls()
-        End If
+    ' 添加类级别的防重复调用变量
+    Private isUpdatingMailList As Boolean = False
+    Private lastUpdateTime As DateTime = DateTime.MinValue
+    Private Const UpdateThreshold As Integer = 500 ' 毫秒
 
+    Public Async Sub UpdateMailList(conversationId As String, mailEntryID As String)
+        Try
+
+            ' 添加堆栈跟踪日志，查看谁调用了这个方法
+            Debug.WriteLine($"UpdateMailList 被调用，调用堆栈: {Environment.StackTrace}")
+
+            If String.IsNullOrEmpty(mailEntryID) Then
+                lvMails?.Items.Clear()
+                Return
+            End If
+
+            ' 记录开始时间，用于性能分析
+            Dim startTime = DateTime.Now
+            Debug.WriteLine($"开始更新邮件列表: {startTime}")
+
+            ' 检查是否需要重新加载列表
+            Dim needReload As Boolean = True
+            If lvMails.Items.Count > 0 AndAlso Not String.IsNullOrEmpty(conversationId) AndAlso
+           String.Equals(conversationId, currentConversationId, StringComparison.OrdinalIgnoreCase) Then
+                needReload = False
+            End If
+
+            ' 单独处理无会话的邮件
+            If Not String.IsNullOrEmpty(mailEntryID) AndAlso String.IsNullOrEmpty(conversationId) Then
+                wbContent.DocumentText = MailHandler.DisplayMailContent(mailEntryID)
+                currentMailEntryID = mailEntryID
+                Debug.WriteLine($"处理无会话邮件，耗时: {(DateTime.Now - startTime).TotalMilliseconds}ms")
+                Return
+            End If
+
+            If needReload Then
+                ' 使用任务并行处理加载会话邮件
+                Await Task.Run(Sub()
+                                   Me.Invoke(Sub() LoadConversationMails(mailEntryID))
+                               End Sub)
+
+                ' 更新当前会话ID并检查笔记
+                If Not String.Equals(conversationId, currentConversationId, StringComparison.OrdinalIgnoreCase) Then
+                    currentConversationId = conversationId
+                    Await CheckWolaiRecordAsync(currentConversationId)
+                End If
+            Else
+                ' 只更新高亮和内容
+                wbContent.DocumentText = MailHandler.DisplayMailContent(mailEntryID)
+                UpdateHighlightByEntryID(currentMailEntryID, mailEntryID)
+            End If
+
+            currentMailEntryID = mailEntryID
+            Debug.WriteLine($"完成更新邮件列表，总耗时: {(DateTime.Now - startTime).TotalMilliseconds}ms")
+        Catch ex As System.Exception
+            Debug.WriteLine($"UpdateMailList error: {ex.Message}")
+        End Try
+    End Sub
+
+    Public Async Sub UpdateMailListOld(conversationId As String, mailEntryID As String)
+
+        ' 添加堆栈跟踪日志，查看谁调用了这个方法
+        Debug.WriteLine($"UpdateMailList 被调用，调用堆栈: {Environment.StackTrace}")
         Try
             If String.IsNullOrEmpty(mailEntryID) Then
-                lvMails.Items.Clear()
+                lvMails?.Items.Clear()
+                Return
+            End If
+
+            ' 记录开始时间，用于性能分析
+            Dim startTime = DateTime.Now
+            Debug.WriteLine($"开始更新邮件列表: {startTime}")
+
+            If mailEntryID = currentMailEntryID Then
+                Debug.WriteLine($"跳过重复更新，时间间隔: {(DateTime.Now - startTime).TotalMilliseconds}ms")
                 Return
             End If
 
@@ -1199,15 +1477,22 @@ Public Class MailThreadPane
                 needReload = False
             End If
 
+            ' 单独处理无会话的邮件
             If Not String.IsNullOrEmpty(mailEntryID) AndAlso String.IsNullOrEmpty(conversationId) Then
                 wbContent.DocumentText = MailHandler.DisplayMailContent(mailEntryID)
+                currentMailEntryID = mailEntryID
+                Debug.WriteLine($"处理无会话邮件，耗时: {(DateTime.Now - startTime).TotalMilliseconds}ms")
+                Return
             End If
 
             If needReload Then
                 ' 暂时移除事件处理器，避免重复触发
                 'RemoveHandler lvMails.SelectedIndexChanged, AddressOf lvMails_SelectedIndexChanged
-
-                LoadConversationMails(mailEntryID)
+                ' 使用任务并行处理加载会话邮件
+                Await Task.Run(Sub()
+                                   Me.Invoke(Sub() LoadConversationMails(mailEntryID))
+                               End Sub)
+                'LoadConversationMails(mailEntryID)
                 ' 重新添加事件处理器
                 'AddHandler lvMails.SelectedIndexChanged, AddressOf lvMails_SelectedIndexChanged
                 ' 更新当前会话ID并检查笔记
@@ -1222,18 +1507,183 @@ Public Class MailThreadPane
                 wbContent.DocumentText = MailHandler.DisplayMailContent(mailEntryID)
                 UpdateHighlightByEntryID(currentMailEntryID, mailEntryID)
             End If
+            currentMailEntryID = mailEntryID
+            Debug.WriteLine($"完成更新邮件列表，总耗时: {(DateTime.Now - startTime).TotalMilliseconds}ms")
         Catch ex As System.Exception
             Debug.WriteLine($"UpdateMailList error: {ex.Message}")
         End Try
-        currentMailEntryID = mailEntryID
+
     End Sub
 
     Private Function GetIndexByEntryID(entryID As String) As Integer
         Return mailItems.FindIndex(Function(x) String.Equals(x.EntryID, entryID.Trim(), StringComparison.OrdinalIgnoreCase))
     End Function
 
-    ' 在listview_Mailist添加构造列表
+
     Private Sub LoadConversationMails(currentMailEntryID As String)
+        If String.IsNullOrEmpty(currentMailEntryID) Then
+            Return
+        End If
+
+        Dim startTime = DateTime.Now
+        Debug.WriteLine($"开始加载会话邮件: {startTime}")
+
+        lvMails.BeginUpdate()
+        Dim currentItem As Object = Nothing
+        Dim conversation As Outlook.Conversation = Nothing
+        Dim table As Outlook.Table = Nothing
+
+        Try
+            lvMails.Items.Clear()
+            mailItems.Clear()
+
+            Try
+                currentItem = Globals.ThisAddIn.Application.Session.GetItemFromID(currentMailEntryID)
+                If currentItem Is Nothing Then
+                    Throw New System.Exception("无法获取邮件项")
+                End If
+
+                ' 获取 conversation 对象前先检查类型
+                If TypeOf currentItem Is Outlook.MailItem Then
+                    conversation = DirectCast(currentItem, Outlook.MailItem).GetConversation()
+                ElseIf TypeOf currentItem Is Outlook.AppointmentItem Then
+                    conversation = DirectCast(currentItem, Outlook.AppointmentItem).GetConversation()
+                End If
+
+                If conversation Is Nothing Then
+                    ' 处理没有会话的单个邮件
+                    Dim entryId As String = GetPermanentEntryID(currentItem)
+                    Dim lvi As New ListViewItem(GetItemImageText(currentItem)) With {
+                    .Tag = entryId,
+                    .Name = "0"
+                }
+
+                    With lvi.SubItems
+                        If TypeOf currentItem Is Outlook.MailItem Then
+                            Dim mail As Outlook.MailItem = DirectCast(currentItem, Outlook.MailItem)
+                            .Add(mail.ReceivedTime.ToString("yyyy-MM-dd HH:mm"))
+                            .Add(mail.SenderName)
+                            .Add(mail.Subject)
+                        ElseIf TypeOf currentItem Is Outlook.AppointmentItem Then
+                            Dim appt As Outlook.AppointmentItem = DirectCast(currentItem, Outlook.AppointmentItem)
+                            .Add(appt.Start.ToString("yyyy-MM-dd HH:mm"))
+                            .Add(appt.Organizer)
+                            .Add(appt.Subject)
+                        End If
+                    End With
+
+                    lvMails.Items.Add(lvi)
+                    mailItems.Add((0, entryId))
+
+                    Debug.WriteLine($"处理单个邮件，耗时: {(DateTime.Now - startTime).TotalMilliseconds}ms")
+                Else
+                    ' 使用批量处理方式加载会话邮件
+                    table = conversation.GetTable()
+                    Try
+                        ' 设置需要的列
+                        table.Columns.Add("EntryID")
+                        table.Columns.Add("SentOn")
+                        table.Columns.Add("ReceivedTime")
+                        table.Columns.Add("SenderName")
+                        table.Columns.Add("Subject")
+                        table.Columns.Add("MessageClass")
+
+                        ' 预分配容量，提高性能
+                        Dim allItems As New List(Of ListViewItem)(100)
+                        Dim tempMailItems As New List(Of (Index As Integer, EntryID As String))(100)
+                        Dim currentIndex As Integer = 0
+                        Dim batchSize As Integer = 0
+
+                        ' 一次性收集所有数据
+                        Do Until table.EndOfTable
+                            Dim row As Outlook.Row = table.GetNextRow()
+                            Dim mailItem As Object = Nothing
+                            Try
+                                mailItem = Globals.ThisAddIn.Application.Session.GetItemFromID(row("EntryID").ToString())
+                                If mailItem IsNot Nothing Then
+                                    Dim entryId As String = GetPermanentEntryID(mailItem)
+
+                                    ' 创建 ListViewItem
+                                    Dim lvi As New ListViewItem(GetItemImageText(mailItem)) With {
+                                    .Tag = entryId,
+                                    .Name = currentIndex.ToString()
+                                }
+
+                                    ' 添加所有列
+                                    With lvi.SubItems
+                                        If TypeOf mailItem Is Outlook.MeetingItem Then
+                                            Dim meeting As Outlook.MeetingItem = DirectCast(mailItem, Outlook.MeetingItem)
+                                            .Add(meeting.CreationTime.ToString("yyyy-MM-dd HH:mm"))
+                                            .Add(meeting.SenderName)
+                                            .Add(meeting.Subject)
+                                        Else
+                                            .Add(If(row("ReceivedTime") IsNot Nothing AndAlso Not String.IsNullOrEmpty(row("ReceivedTime").ToString()),
+                                            DateTime.Parse(row("ReceivedTime").ToString()).ToString("yyyy-MM-dd HH:mm"),
+                                            "Unknown Date"))
+                                            .Add(If(row("SenderName") IsNot Nothing, row("SenderName").ToString(), "Unknown Sender"))
+                                            .Add(If(row("Subject") IsNot Nothing, row("Subject").ToString(), "Unknown Subject"))
+                                        End If
+                                    End With
+
+                                    ' 添加到临时列表
+                                    allItems.Add(lvi)
+                                    tempMailItems.Add((currentIndex, entryId))
+                                    currentIndex += 1
+                                    batchSize += 1
+                                End If
+                            Finally
+                                If mailItem IsNot Nothing Then
+                                    Runtime.InteropServices.Marshal.ReleaseComObject(mailItem)
+                                End If
+                                If row IsNot Nothing Then
+                                    Runtime.InteropServices.Marshal.ReleaseComObject(row)
+                                End If
+                            End Try
+                        Loop
+
+                        Debug.WriteLine($"收集了 {batchSize} 封邮件，耗时: {(DateTime.Now - startTime).TotalMilliseconds}ms")
+
+                        ' 一次性添加所有项目
+                        lvMails.Items.Clear()
+                        mailItems.Clear()
+                        lvMails.Items.AddRange(allItems.ToArray())
+                        mailItems = tempMailItems
+
+                        ' 设置排序
+                        lvMails.Sorting = SortOrder.Descending
+                        lvMails.ListViewItemSorter = New ListViewItemComparer(1, SortOrder.Descending)
+                        lvMails.Sort()
+
+                        ' 设置高亮并确保可见
+                        UpdateHighlightByEntryID(String.Empty, currentMailEntryID)
+
+                        Debug.WriteLine($"完成加载会话邮件，总耗时: {(DateTime.Now - startTime).TotalMilliseconds}ms")
+                    Finally
+                        If table IsNot Nothing Then
+                            Runtime.InteropServices.Marshal.ReleaseComObject(table)
+                        End If
+                    End Try
+                End If
+            Catch ex As System.Exception
+                Debug.WriteLine($"处理邮件时出错: {ex.Message}")
+                ' 避免向用户显示不必要的错误消息
+                ' MessageBox.Show($"处理邮件时出错: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            End Try
+        Finally
+            lvMails.EndUpdate()
+
+            ' 释放 COM 对象
+            If conversation IsNot Nothing Then
+                Runtime.InteropServices.Marshal.ReleaseComObject(conversation)
+            End If
+            If currentItem IsNot Nothing Then
+                Runtime.InteropServices.Marshal.ReleaseComObject(currentItem)
+            End If
+        End Try
+    End Sub
+
+    ' 在listview_Mailist添加构造列表
+    Private Sub LoadConversationMailsOld(currentMailEntryID As String)
         If String.IsNullOrEmpty(currentMailEntryID) Then
             Return
         End If
@@ -1453,7 +1903,8 @@ Public Class MailThreadPane
 
         ' 在 InitializeComponent() 之后添加任何初始化代码
         defaultFont = SystemFonts.DefaultFont
-        iconFont = New Font("Segoe UI Emoji", 10)  ' 使用 Segoe UI Emoji 字体以获得更好的 emoji 显示效果
+        'iconFont = New Font("Segoe UI Emoji", 10)  ' 使用 Segoe UI Emoji 字体以获得更好的 emoji 显示效果
+        iconFont = New Font("Segoe UI Emoji", 8, FontStyle.Regular)
         normalFont = New Font(defaultFont, FontStyle.Regular)
         highlightFont = New Font(defaultFont, FontStyle.Bold)  ' 使用 defaultFont 作为基础字体
 

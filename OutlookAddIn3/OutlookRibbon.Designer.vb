@@ -31,37 +31,43 @@
 
     <System.Diagnostics.DebuggerStepThrough()>
     Private Sub InitializeComponent()
-        Me.Tab1 = Factory.CreateRibbonTab()
-        Me.Group1 = Factory.CreateRibbonGroup()
-        Me.ToggleButton1 = Factory.CreateRibbonToggleButton()
+        Me.Tab1 = Me.Factory.CreateRibbonTab
+        Me.Group1 = Me.Factory.CreateRibbonGroup
+        Me.ToggleButton1 = Me.Factory.CreateRibbonToggleButton
         Me.Tab1.SuspendLayout()
         Me.Group1.SuspendLayout()
         Me.SuspendLayout()
-
+        '
         'Tab1
+        '
         Me.Tab1.ControlId.ControlIdType = Microsoft.Office.Tools.Ribbon.RibbonControlIdType.Office
-        Me.Tab1.ControlId.OfficeId = "TabAddIns"
         Me.Tab1.Groups.Add(Me.Group1)
         Me.Tab1.Label = "MyList"
         Me.Tab1.Name = "Tab1"
-
+        '
         'Group1
+        '
         Me.Group1.Items.Add(Me.ToggleButton1)
         Me.Group1.Label = "视图"
         Me.Group1.Name = "Group1"
-
+        '
         'ToggleButton1
+        '
         Me.ToggleButton1.Label = "ShowPane"
         Me.ToggleButton1.Name = "ToggleButton1"
         Me.ToggleButton1.ScreenTip = "切换邮件会话面板的显示状态"
-
+        '
         'OutlookRibbon
+        '
         Me.Name = "OutlookRibbon"
         Me.RibbonType = "Microsoft.Outlook.Explorer"
         Me.Tabs.Add(Me.Tab1)
         Me.Tab1.ResumeLayout(False)
+        Me.Tab1.PerformLayout()
         Me.Group1.ResumeLayout(False)
+        Me.Group1.PerformLayout()
         Me.ResumeLayout(False)
+
     End Sub
 
     Friend WithEvents Tab1 As Microsoft.Office.Tools.Ribbon.RibbonTab

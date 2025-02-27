@@ -7,11 +7,11 @@
       "RelativeMoniker": "D:0:0:{EBF74916-AE97-49ED-823E-1DB98E56ED45}|OutlookAddIn3\\OutlookAddIn3.vbproj|solutionrelative:outlookaddin3\\mailthreadpane.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{EBF74916-AE97-49ED-823E-1DB98E56ED45}|OutlookAddIn3\\OutlookAddIn3.vbproj|C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\outlookaddin3\\thisaddin.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}",
+      "AbsoluteMoniker": "D:0:0:{EBF74916-AE97-49ED-823E-1DB98E56ED45}|OutlookAddIn3\\OutlookAddIn3.vbproj|c:\\users\\nxa08267\\source\\repos\\outlookaddin3\\outlookaddin3\\thisaddin.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}",
       "RelativeMoniker": "D:0:0:{EBF74916-AE97-49ED-823E-1DB98E56ED45}|OutlookAddIn3\\OutlookAddIn3.vbproj|solutionrelative:outlookaddin3\\thisaddin.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{EBF74916-AE97-49ED-823E-1DB98E56ED45}|OutlookAddIn3\\OutlookAddIn3.vbproj|C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\outlookaddin3\\handlers\\mailhandler.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}",
+      "AbsoluteMoniker": "D:0:0:{EBF74916-AE97-49ED-823E-1DB98E56ED45}|OutlookAddIn3\\OutlookAddIn3.vbproj|c:\\users\\nxa08267\\source\\repos\\outlookaddin3\\outlookaddin3\\handlers\\mailhandler.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}",
       "RelativeMoniker": "D:0:0:{EBF74916-AE97-49ED-823E-1DB98E56ED45}|OutlookAddIn3\\OutlookAddIn3.vbproj|solutionrelative:outlookaddin3\\handlers\\mailhandler.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}"
     },
     {
@@ -19,18 +19,30 @@
       "RelativeMoniker": "D:0:0:{EBF74916-AE97-49ED-823E-1DB98E56ED45}|OutlookAddIn3\\OutlookAddIn3.vbproj|solutionrelative:outlookaddin3\\taskmonitor.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\nxa08267\\AppData\\Local\\Temp\\43ef6084-1559-4db7-8799-501912f82e3e_OutlookAddIn3.7z.OutlookAddIn3.7z\\OutlookAddIn3\\OutlookAddIn3\\MailThreadPane.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}"
+      "AbsoluteMoniker": "D:0:0:{00000000-0000-0000-0000-000000000000}|\u003CSolution\u003E|OutlookAddIn3||{04B8AB82-A572-4FEF-95CE-5222444B6B64}|"
     },
     {
       "AbsoluteMoniker": "D:0:0:{EBF74916-AE97-49ED-823E-1DB98E56ED45}|OutlookAddIn3\\OutlookAddIn3.vbproj|C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\outlookaddin3\\utils\\listviewitemcomparer.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}",
       "RelativeMoniker": "D:0:0:{EBF74916-AE97-49ED-823E-1DB98E56ED45}|OutlookAddIn3\\OutlookAddIn3.vbproj|solutionrelative:outlookaddin3\\utils\\listviewitemcomparer.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{EBF74916-AE97-49ED-823E-1DB98E56ED45}|OutlookAddIn3\\OutlookAddIn3.vbproj|C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\outlookaddin3\\mailthreadpane.designer.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}",
-      "RelativeMoniker": "D:0:0:{EBF74916-AE97-49ED-823E-1DB98E56ED45}|OutlookAddIn3\\OutlookAddIn3.vbproj|solutionrelative:outlookaddin3\\mailthreadpane.designer.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}"
+      "AbsoluteMoniker": "D:0:0:{EBF74916-AE97-49ED-823E-1DB98E56ED45}|OutlookAddIn3\\OutlookAddIn3.vbproj|C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\outlookaddin3\\models\\taskinfo.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}",
+      "RelativeMoniker": "D:0:0:{EBF74916-AE97-49ED-823E-1DB98E56ED45}|OutlookAddIn3\\OutlookAddIn3.vbproj|solutionrelative:outlookaddin3\\models\\taskinfo.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{00000000-0000-0000-0000-000000000000}|\u003CSolution\u003E|OutlookAddIn3||{04B8AB82-A572-4FEF-95CE-5222444B6B64}|"
+      "AbsoluteMoniker": "D:0:0:{EBF74916-AE97-49ED-823E-1DB98E56ED45}|OutlookAddIn3\\OutlookAddIn3.vbproj|C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\outlookaddin3\\handlers\\taskhandler.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}",
+      "RelativeMoniker": "D:0:0:{EBF74916-AE97-49ED-823E-1DB98E56ED45}|OutlookAddIn3\\OutlookAddIn3.vbproj|solutionrelative:outlookaddin3\\handlers\\taskhandler.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{EBF74916-AE97-49ED-823E-1DB98E56ED45}|OutlookAddIn3\\OutlookAddIn3.vbproj|C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\outlookaddin3\\mailthreadpane.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}|Form",
+      "RelativeMoniker": "D:0:0:{EBF74916-AE97-49ED-823E-1DB98E56ED45}|OutlookAddIn3\\OutlookAddIn3.vbproj|solutionrelative:outlookaddin3\\mailthreadpane.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}|Form"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\nxa08267\\AppData\\Local\\Temp\\43ef6084-1559-4db7-8799-501912f82e3e_OutlookAddIn3.7z.OutlookAddIn3.7z\\OutlookAddIn3\\OutlookAddIn3\\MailThreadPane.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{EBF74916-AE97-49ED-823E-1DB98E56ED45}|OutlookAddIn3\\OutlookAddIn3.vbproj|C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\outlookaddin3\\mailthreadpane.designer.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}",
+      "RelativeMoniker": "D:0:0:{EBF74916-AE97-49ED-823E-1DB98E56ED45}|OutlookAddIn3\\OutlookAddIn3.vbproj|solutionrelative:outlookaddin3\\mailthreadpane.designer.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{EBF74916-AE97-49ED-823E-1DB98E56ED45}|OutlookAddIn3\\OutlookAddIn3.vbproj|C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\outlookaddin3\\outlookribbon.designer.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}",
@@ -39,22 +51,6 @@
     {
       "AbsoluteMoniker": "D:0:0:{EBF74916-AE97-49ED-823E-1DB98E56ED45}|OutlookAddIn3\\OutlookAddIn3.vbproj|C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\outlookaddin3\\outlookribbon.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}",
       "RelativeMoniker": "D:0:0:{EBF74916-AE97-49ED-823E-1DB98E56ED45}|OutlookAddIn3\\OutlookAddIn3.vbproj|solutionrelative:outlookaddin3\\outlookribbon.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{EBF74916-AE97-49ED-823E-1DB98E56ED45}|OutlookAddIn3\\OutlookAddIn3.vbproj|C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\outlookaddin3\\outlookribbon.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}|Form",
-      "RelativeMoniker": "D:0:0:{EBF74916-AE97-49ED-823E-1DB98E56ED45}|OutlookAddIn3\\OutlookAddIn3.vbproj|solutionrelative:outlookaddin3\\outlookribbon.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}|Form"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{EBF74916-AE97-49ED-823E-1DB98E56ED45}|OutlookAddIn3\\OutlookAddIn3.vbproj|C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\outlookaddin3\\handlers\\taskhandler.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}",
-      "RelativeMoniker": "D:0:0:{EBF74916-AE97-49ED-823E-1DB98E56ED45}|OutlookAddIn3\\OutlookAddIn3.vbproj|solutionrelative:outlookaddin3\\handlers\\taskhandler.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{EBF74916-AE97-49ED-823E-1DB98E56ED45}|OutlookAddIn3\\OutlookAddIn3.vbproj|C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\outlookaddin3\\models\\taskinfo.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}",
-      "RelativeMoniker": "D:0:0:{EBF74916-AE97-49ED-823E-1DB98E56ED45}|OutlookAddIn3\\OutlookAddIn3.vbproj|solutionrelative:outlookaddin3\\models\\taskinfo.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{EBF74916-AE97-49ED-823E-1DB98E56ED45}|OutlookAddIn3\\OutlookAddIn3.vbproj|C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\outlookaddin3\\mailthreadpane.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}|Form",
-      "RelativeMoniker": "D:0:0:{EBF74916-AE97-49ED-823E-1DB98E56ED45}|OutlookAddIn3\\OutlookAddIn3.vbproj|solutionrelative:outlookaddin3\\mailthreadpane.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}|Form"
     },
     {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\TaskInfo.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}",
@@ -78,73 +74,39 @@
               "RelativeDocumentMoniker": "OutlookAddIn3\\MailThreadPane.vb",
               "ToolTip": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\MailThreadPane.vb",
               "RelativeToolTip": "OutlookAddIn3\\MailThreadPane.vb",
-              "ViewState": "AgIAAIwEAAAAAAAAAAAuwJIEAAAIAAAAAAAAAA==",
+              "ViewState": "AgIAAK0FAAAAAAAAAAA6wL4FAAASAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003361|",
-              "WhenOpened": "2025-02-20T13:15:15.055Z",
-              "IsPinned": true,
+              "WhenOpened": "2025-02-27T17:28:44.79Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "ThisAddIn.vb",
+              "DocumentMoniker": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\ThisAddIn.vb",
+              "RelativeDocumentMoniker": "OutlookAddIn3\\ThisAddIn.vb",
+              "ToolTip": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\ThisAddIn.vb",
+              "RelativeToolTip": "OutlookAddIn3\\ThisAddIn.vb",
+              "ViewState": "AgIAAEgAAAAAAAAAAAAqwE4AAAAOAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003361|",
+              "WhenOpened": "2025-02-27T16:10:53.369Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "ListViewItemComparer.vb",
+              "DocumentMoniker": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\Utils\\ListViewItemComparer.vb",
+              "RelativeDocumentMoniker": "OutlookAddIn3\\Utils\\ListViewItemComparer.vb",
+              "ToolTip": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\Utils\\ListViewItemComparer.vb",
+              "RelativeToolTip": "OutlookAddIn3\\Utils\\ListViewItemComparer.vb",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003361|",
+              "WhenOpened": "2025-02-21T19:36:36.577Z"
+            },
+            {
+              "$type": "Document",
               "DocumentIndex": 7,
-              "Title": "OutlookAddIn3",
-              "DocumentMoniker": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\OutlookAddIn3.vbproj",
-              "RelativeDocumentMoniker": "OutlookAddIn3\\OutlookAddIn3.vbproj",
-              "ToolTip": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\OutlookAddIn3.vbproj",
-              "RelativeToolTip": "OutlookAddIn3\\OutlookAddIn3.vbproj",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
-              "WhenOpened": "2025-02-24T19:19:17.517Z"
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 8,
-              "Title": "OutlookRibbon.Designer.vb",
-              "DocumentMoniker": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\OutlookRibbon.Designer.vb",
-              "RelativeDocumentMoniker": "OutlookAddIn3\\OutlookRibbon.Designer.vb",
-              "ToolTip": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\OutlookRibbon.Designer.vb",
-              "RelativeToolTip": "OutlookAddIn3\\OutlookRibbon.Designer.vb",
-              "ViewState": "AgIAABEAAAAAAAAAAAAswBkAAAAlAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003361|",
-              "WhenOpened": "2025-02-24T18:53:31.008Z"
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 9,
-              "Title": "OutlookRibbon.vb",
-              "DocumentMoniker": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\OutlookRibbon.vb",
-              "RelativeDocumentMoniker": "OutlookAddIn3\\OutlookRibbon.vb",
-              "ToolTip": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\OutlookRibbon.vb",
-              "RelativeToolTip": "OutlookAddIn3\\OutlookRibbon.vb",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003361|",
-              "WhenOpened": "2025-02-24T18:44:52.083Z"
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 10,
-              "Title": "OutlookRibbon.vb [Design]",
-              "DocumentMoniker": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\OutlookRibbon.vb",
-              "RelativeDocumentMoniker": "OutlookAddIn3\\OutlookRibbon.vb",
-              "ToolTip": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\OutlookRibbon.vb [Design]",
-              "RelativeToolTip": "OutlookAddIn3\\OutlookRibbon.vb [Design]",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003361|",
-              "WhenOpened": "2025-02-24T18:41:35.789Z"
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 12,
-              "Title": "TaskInfo.vb",
-              "DocumentMoniker": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\Models\\TaskInfo.vb",
-              "RelativeDocumentMoniker": "OutlookAddIn3\\Models\\TaskInfo.vb",
-              "ToolTip": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\Models\\TaskInfo.vb",
-              "RelativeToolTip": "OutlookAddIn3\\Models\\TaskInfo.vb",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAoAAAANAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003361|",
-              "WhenOpened": "2025-02-21T19:35:27.485Z"
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 11,
               "Title": "TaskHandler.vb",
               "DocumentMoniker": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\Handlers\\TaskHandler.vb",
               "RelativeDocumentMoniker": "OutlookAddIn3\\Handlers\\TaskHandler.vb",
@@ -157,33 +119,91 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 1,
-              "Title": "ThisAddIn.vb",
-              "DocumentMoniker": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\ThisAddIn.vb",
-              "RelativeDocumentMoniker": "OutlookAddIn3\\ThisAddIn.vb",
-              "ToolTip": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\ThisAddIn.vb",
-              "RelativeToolTip": "OutlookAddIn3\\ThisAddIn.vb",
-              "ViewState": "AgIAACEAAAAAAAAAAAAgwDAAAAAUAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003361|",
-              "WhenOpened": "2025-02-20T12:42:11.715Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
               "DocumentIndex": 2,
               "Title": "MailHandler.vb",
               "DocumentMoniker": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\Handlers\\MailHandler.vb",
               "RelativeDocumentMoniker": "OutlookAddIn3\\Handlers\\MailHandler.vb",
               "ToolTip": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\Handlers\\MailHandler.vb",
               "RelativeToolTip": "OutlookAddIn3\\Handlers\\MailHandler.vb",
-              "ViewState": "AgIAAJYAAAAAAAAAAAAnwKQAAAAEAAAAAAAAAA==",
+              "ViewState": "AgIAAEkAAAAAAAAAAAAqwFEAAABhAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003361|",
               "WhenOpened": "2025-02-21T19:36:22.605Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
+              "DocumentIndex": 6,
+              "Title": "TaskInfo.vb",
+              "DocumentMoniker": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\Models\\TaskInfo.vb",
+              "RelativeDocumentMoniker": "OutlookAddIn3\\Models\\TaskInfo.vb",
+              "ToolTip": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\Models\\TaskInfo.vb",
+              "RelativeToolTip": "OutlookAddIn3\\Models\\TaskInfo.vb",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAoAAAANAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003361|",
+              "WhenOpened": "2025-02-21T19:35:27.485Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "TaskMonitor.vb",
+              "DocumentMoniker": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\TaskMonitor.vb",
+              "RelativeDocumentMoniker": "OutlookAddIn3\\TaskMonitor.vb",
+              "ToolTip": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\TaskMonitor.vb",
+              "RelativeToolTip": "OutlookAddIn3\\TaskMonitor.vb",
+              "ViewState": "AgIAAAUAAAAAAAAAAAAQwBAAAAAkAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003361|",
+              "WhenOpened": "2025-02-21T18:01:17.397Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 8,
+              "Title": "MailThreadPane.vb [Design]",
+              "DocumentMoniker": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\MailThreadPane.vb",
+              "RelativeDocumentMoniker": "OutlookAddIn3\\MailThreadPane.vb",
+              "ToolTip": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\MailThreadPane.vb [Design]",
+              "RelativeToolTip": "OutlookAddIn3\\MailThreadPane.vb [Design]",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003361|",
+              "WhenOpened": "2025-02-21T19:36:13.085Z",
+              "EditorCaption": " [Design]"
+            },
+            {
+              "$type": "Document",
               "DocumentIndex": 4,
+              "Title": "OutlookAddIn3",
+              "DocumentMoniker": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\OutlookAddIn3.vbproj",
+              "RelativeDocumentMoniker": "OutlookAddIn3\\OutlookAddIn3.vbproj",
+              "ToolTip": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\OutlookAddIn3.vbproj",
+              "RelativeToolTip": "OutlookAddIn3\\OutlookAddIn3.vbproj",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
+              "WhenOpened": "2025-02-27T03:21:15.259Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 12,
+              "Title": "OutlookRibbon.vb",
+              "DocumentMoniker": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\OutlookRibbon.vb",
+              "RelativeDocumentMoniker": "OutlookAddIn3\\OutlookRibbon.vb",
+              "ToolTip": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\OutlookRibbon.vb",
+              "RelativeToolTip": "OutlookAddIn3\\OutlookRibbon.vb",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003361|",
+              "WhenOpened": "2025-02-24T18:44:52.083Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 11,
+              "Title": "OutlookRibbon.Designer.vb",
+              "DocumentMoniker": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\OutlookRibbon.Designer.vb",
+              "RelativeDocumentMoniker": "OutlookAddIn3\\OutlookRibbon.Designer.vb",
+              "ToolTip": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\OutlookRibbon.Designer.vb",
+              "RelativeToolTip": "OutlookAddIn3\\OutlookRibbon.Designer.vb",
+              "ViewState": "AgIAABEAAAAAAAAAAAAswBkAAAAlAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003361|",
+              "WhenOpened": "2025-02-24T18:53:31.008Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 9,
               "Title": "MailThreadPane.vb",
               "DocumentMoniker": "C:\\Users\\nxa08267\\AppData\\Local\\Temp\\43ef6084-1559-4db7-8799-501912f82e3e_OutlookAddIn3.7z.OutlookAddIn3.7z\\OutlookAddIn3\\OutlookAddIn3\\MailThreadPane.vb",
               "RelativeDocumentMoniker": "..\\..\\..\\AppData\\Local\\Temp\\43ef6084-1559-4db7-8799-501912f82e3e_OutlookAddIn3.7z.OutlookAddIn3.7z\\OutlookAddIn3\\OutlookAddIn3\\MailThreadPane.vb",
@@ -195,7 +215,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 6,
+              "DocumentIndex": 10,
               "Title": "MailThreadPane.Designer.vb",
               "DocumentMoniker": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\MailThreadPane.Designer.vb",
               "RelativeDocumentMoniker": "OutlookAddIn3\\MailThreadPane.Designer.vb",
@@ -203,46 +223,12 @@
               "RelativeToolTip": "OutlookAddIn3\\MailThreadPane.Designer.vb",
               "ViewState": "AgIAAAAAAAAAAAAAAAAUwAkAAAAwAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003361|",
-              "WhenOpened": "2025-02-22T01:12:32.384Z"
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 3,
-              "Title": "TaskMonitor.vb",
-              "DocumentMoniker": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\TaskMonitor.vb",
-              "RelativeDocumentMoniker": "OutlookAddIn3\\TaskMonitor.vb",
-              "ToolTip": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\TaskMonitor.vb",
-              "RelativeToolTip": "OutlookAddIn3\\TaskMonitor.vb",
-              "ViewState": "AgIAABwAAAAAAAAAAAAAwCsAAAAEAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003361|",
-              "WhenOpened": "2025-02-21T18:01:17.397Z"
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 5,
-              "Title": "ListViewItemComparer.vb",
-              "DocumentMoniker": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\Utils\\ListViewItemComparer.vb",
-              "RelativeDocumentMoniker": "OutlookAddIn3\\Utils\\ListViewItemComparer.vb",
-              "ToolTip": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\Utils\\ListViewItemComparer.vb",
-              "RelativeToolTip": "OutlookAddIn3\\Utils\\ListViewItemComparer.vb",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAwAAAAEAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003361|",
-              "WhenOpened": "2025-02-21T19:36:36.577Z"
+              "WhenOpened": "2025-02-22T01:12:32.384Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Document",
               "DocumentIndex": 13,
-              "Title": "MailThreadPane.vb [Design]",
-              "DocumentMoniker": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\MailThreadPane.vb",
-              "RelativeDocumentMoniker": "OutlookAddIn3\\MailThreadPane.vb",
-              "ToolTip": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\MailThreadPane.vb [Design]",
-              "RelativeToolTip": "OutlookAddIn3\\MailThreadPane.vb [Design]",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003361|",
-              "WhenOpened": "2025-02-21T19:36:13.085Z"
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 14,
               "Title": "TaskInfo.vb",
               "DocumentMoniker": "C:\\Users\\nxa08267\\source\\repos\\OutlookAddIn3\\OutlookAddIn3\\TaskInfo.vb",
               "RelativeDocumentMoniker": "OutlookAddIn3\\TaskInfo.vb",
