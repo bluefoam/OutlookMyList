@@ -1,8 +1,3 @@
-C:\Users\nxa08267\source\repos\OutlookAddIn3\OutlookAddIn3\bin\Release\OutlookAddIn3.dll
-C:\Users\nxa08267\source\repos\OutlookAddIn3\OutlookAddIn3\bin\Release\OutlookAddIn3.pdb
-C:\Users\nxa08267\source\repos\OutlookAddIn3\OutlookAddIn3\bin\Release\OutlookAddIn3.xml
-C:\Users\nxa08267\source\repos\OutlookAddIn3\OutlookAddIn3\bin\Release\OutlookAddIn3.dll.manifest
-C:\Users\nxa08267\source\repos\OutlookAddIn3\OutlookAddIn3\bin\Release\OutlookAddIn3.vsto
 C:\Users\nxa08267\source\repos\OutlookAddIn3\OutlookAddIn3\bin\Release\Microsoft.Office.Tools.Common.v4.0.Utilities.dll
 C:\Users\nxa08267\source\repos\OutlookAddIn3\OutlookAddIn3\bin\Release\Microsoft.Office.Tools.Outlook.v4.0.Utilities.dll
 C:\Users\nxa08267\source\repos\OutlookAddIn3\OutlookAddIn3\obj\Release\OutlookAddIn3.vbproj.AssemblyReference.cache
@@ -13,9 +8,14 @@ C:\Users\nxa08267\source\repos\OutlookAddIn3\OutlookAddIn3\obj\Release\OutlookAd
 C:\Users\nxa08267\source\repos\OutlookAddIn3\OutlookAddIn3\obj\Release\OutlookAddIn3.vbproj.GenerateResource.cache
 C:\Users\nxa08267\source\repos\OutlookAddIn3\OutlookAddIn3\obj\Release\OutlookAddIn3.vbproj.CoreCompileInputs.cache
 C:\Users\nxa08267\source\repos\OutlookAddIn3\OutlookAddIn3\obj\Release\OutlookA.73C0548D.Up2Date
-C:\Users\nxa08267\source\repos\OutlookAddIn3\OutlookAddIn3\obj\Release\OutlookAddIn3.dll
-C:\Users\nxa08267\source\repos\OutlookAddIn3\OutlookAddIn3\obj\Release\OutlookAddIn3.xml
-C:\Users\nxa08267\source\repos\OutlookAddIn3\OutlookAddIn3\obj\Release\OutlookAddIn3.pdb
 C:\Users\nxa08267\source\repos\OutlookAddIn3\OutlookAddIn3\bin\Release\Newtonsoft.Json.dll
 C:\Users\nxa08267\source\repos\OutlookAddIn3\OutlookAddIn3\bin\Release\Newtonsoft.Json.xml
 C:\Users\nxa08267\source\repos\OutlookAddIn3\OutlookAddIn3\obj\Release\OutlookAddIn3.OutlookRibbon.resources
+C:\Users\nxa08267\source\repos\OutlookAddIn3\OutlookAddIn3\bin\Release\OA-MyList.dll
+C:\Users\nxa08267\source\repos\OutlookAddIn3\OutlookAddIn3\bin\Release\OA-MyList.pdb
+C:\Users\nxa08267\source\repos\OutlookAddIn3\OutlookAddIn3\bin\Release\OA-MyList.xml
+C:\Users\nxa08267\source\repos\OutlookAddIn3\OutlookAddIn3\bin\Release\OA-MyList.dll.manifest
+C:\Users\nxa08267\source\repos\OutlookAddIn3\OutlookAddIn3\bin\Release\OA-MyList.vsto
+C:\Users\nxa08267\source\repos\OutlookAddIn3\OutlookAddIn3\obj\Release\OA-MyList.dll
+C:\Users\nxa08267\source\repos\OutlookAddIn3\OutlookAddIn3\obj\Release\OA-MyList.xml
+C:\Users\nxa08267\source\repos\OutlookAddIn3\OutlookAddIn3\obj\Release\OA-MyList.pdb

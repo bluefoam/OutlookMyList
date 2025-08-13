@@ -23,6 +23,86 @@ Public Class MailThreadPane
     Private ReadOnly highlightFont As Font
     Private ReadOnly normalFont As Font
     Private ReadOnly highlightColor As Color = Color.FromArgb(255, 255, 200)
+    
+    ' 主题颜色
+    Private currentBackColor As Color = SystemColors.Window
+    Private currentForeColor As Color = SystemColors.WindowText
+    
+    ' 应用主题颜色
+    Public Sub ApplyTheme(backgroundColor As Color, foregroundColor As Color)
+        Try
+            ' 保存当前主题颜色
+            currentBackColor = backgroundColor
+            currentForeColor = foregroundColor
+            
+            ' 应用到控件
+            Me.BackColor = backgroundColor
+            
+            ' 应用到ListView
+            If lvMails IsNot Nothing Then
+                lvMails.BackColor = backgroundColor
+                lvMails.ForeColor = foregroundColor
+            End If
+            
+            ' 应用到任务列表
+            If taskList IsNot Nothing Then
+                taskList.BackColor = backgroundColor
+                taskList.ForeColor = foregroundColor
+            End If
+            
+            ' 应用到分隔控件
+            If splitter1 IsNot Nothing Then
+                splitter1.BackColor = backgroundColor
+                splitter1.Panel1.BackColor = backgroundColor
+                splitter1.Panel2.BackColor = backgroundColor
+            End If
+            
+            If splitter2 IsNot Nothing Then
+                splitter2.BackColor = backgroundColor
+                splitter2.Panel1.BackColor = backgroundColor
+                splitter2.Panel2.BackColor = backgroundColor
+            End If
+    
+            ' 应用到WebBrowser控件
+            If wbContent IsNot Nothing AndAlso wbContent.Document IsNot Nothing Then
+                ' 为WebBrowser设置背景色
+                Dim bgColorHex As String = "#" & backgroundColor.R.ToString("X2") & backgroundColor.G.ToString("X2") & backgroundColor.B.ToString("X2")
+                Dim fgColorHex As String = "#" & foregroundColor.R.ToString("X2") & foregroundColor.G.ToString("X2") & foregroundColor.B.ToString("X2")
+                
+                Try
+                    ' 通过JavaScript设置背景色、文本颜色和CSS变量
+                    Dim script As String = "" & _
+                    "document.body.style.backgroundColor = '" & bgColorHex & "';" & _
+                    "document.body.style.color = '" & fgColorHex & "';" & _
+                    "document.documentElement.style.setProperty('--theme-color', '#0078d7');"
+                    
+                    wbContent.Document.InvokeScript("eval", New Object() {script})
+                Catch ex As System.Exception
+                    Debug.WriteLine("设置WebBrowser颜色出错: " & ex.Message)
+                End Try
+            End If
+            
+            ' 应用到按钮面板
+            If btnPanel IsNot Nothing Then
+                btnPanel.BackColor = backgroundColor
+                
+                ' 应用到按钮面板中的所有控件
+                For Each ctrl As Control In btnPanel.Controls
+                    If TypeOf ctrl Is Button Then
+                        ' 按钮保持系统默认颜色
+                    Else
+                        ctrl.BackColor = backgroundColor
+                        ctrl.ForeColor = foregroundColor
+                    End If
+                Next
+            End If
+            
+            ' 强制重绘
+            Me.Invalidate(True)
+        Catch ex As System.Exception
+            Debug.WriteLine("ApplyTheme error: " & ex.Message)
+        End Try
+    End Sub
 
 
     Private WithEvents lvMails As ListView
@@ -33,6 +113,8 @@ Public Class MailThreadPane
     Private btnPanel As Panel
     Private currentConversationId As String = String.Empty
     Private currentMailEntryID As String = String.Empty
+    Private currentSortColumn As Integer = 0
+    Private currentSortOrder As SortOrder = SortOrder.Ascending
     Private currentHighlightEntryID As String
 
     Private mailItems As New List(Of (Index As Integer, EntryID As String))  ' 移到这里
@@ -272,7 +354,9 @@ Public Class MailThreadPane
             .FullRowSelect = True,
             .Sorting = SortOrder.Descending,
             .AllowColumnReorder = True,
-            .OwnerDraw = True  ' 启用自定义绘制
+            .OwnerDraw = True,  ' 启用自定义绘制
+            .BackColor = currentBackColor,
+            .ForeColor = currentForeColor
         }
 
         lvMails.Columns.Add("----", 40)  ' 增加宽度以适应更大的图标
@@ -772,7 +856,9 @@ Public Class MailThreadPane
         taskButtonPanel.Controls.Add(btnAddTask)
 
         taskList = New ListView With {
-            .Dock = DockStyle.Fill
+            .Dock = DockStyle.Fill,
+            .BackColor = currentBackColor,
+            .ForeColor = currentForeColor
         }
         OutlookAddIn3.Handlers.TaskHandler.SetupTaskList(taskList)
         taskList.Columns.Add("主题", 200)
@@ -1133,7 +1219,7 @@ Public Class MailThreadPane
             Using client As New HttpClient()
                 ' 获取 token
                 Dim tokenData As New JObject()
-                tokenData.Add("appId", "2NdHab5WdUG995izevb69b")
+                tokenData.Add("", "2NdHab5WdUG995izevb69b")
                 tokenData.Add("appSecret", "ffa888d4ebd73bae77a77abebcacf80001654b3f19d4ffbbcc3c41cbe0bed645")
 
                 Dim tokenContent = New StringContent(tokenData.ToString(), Encoding.UTF8, "application/json")
@@ -1160,7 +1246,7 @@ Public Class MailThreadPane
                 ' 构建查询参数
                 Dim queryData As New JObject()
                 queryData.Add("filter", New JObject From {
-                    {"property", "会话ID"},
+                    {"property", "ConvID"},
                     {"value", conversationId},
                     {"type", "text"},
                     {"operator", "equals"}
@@ -1179,8 +1265,8 @@ Public Class MailThreadPane
                         For Each row In rows
                             Dim pageId = row.ToString().Split("/"c).Last()
                             Dim wolaiLink = $"https://www.wolai.com/{pageId}"
-                            Dim title = row.Parent.Parent("标题")?.ToString()
-                            Dim createTime = row.Parent.Parent("创建时间")?.ToString()
+                            Dim title = row.Parent.Parent("Title")?.ToString()
+                            Dim createTime = row.Parent.Parent("Created Time")?.ToString()
                             ' 避免重复添加
                             If Not noteList.Any(Function(n) n.Link = wolaiLink) Then
                                 noteList.Add((createTime, title, wolaiLink))
@@ -1262,9 +1348,9 @@ Public Class MailThreadPane
                 Dim saveData As New JObject()
                 Dim rows As New JArray()
                 Dim row As New JObject()
-                row.Add("标题", conversationTitle)
-                row.Add("网址", "undefined")
-                row.Add("会话ID", conversationId)
+                row.Add("Title", conversationTitle)
+                row.Add("URL", "undefined")
+                row.Add("ConvID", conversationId)
                 rows.Add(row)
                 saveData.Add("rows", rows)
 
@@ -2058,31 +2144,36 @@ Public Class MailThreadPane
         End Function
     End Class
 
-    Private Sub lvMails_ColumnClick(sender As Object, e As ColumnClickEventArgs)
-        Try
-            Dim lv As ListView = DirectCast(sender, ListView)
 
-            ' 切换排序方向
-            lv.Sorting = If(lv.Sorting = SortOrder.Ascending, SortOrder.Descending, SortOrder.Ascending)
 
-            ' 使用自定义排序器
-            lv.ListViewItemSorter = New ListViewItemComparer(e.Column, lv.Sorting)
-            lv.Sort()
 
-            ' 更新高亮
-            If Not String.IsNullOrEmpty(currentMailEntryID) Then
-                UpdateHighlightByEntryID(String.Empty, currentMailEntryID)
-            End If
+    ' 此方法已被替换为上面的lvMails_ColumnClick方法
+    'Private Sub lvMails_ColumnClick(sender As Object, e As ColumnClickEventArgs)
+    '    Try
+    '        Dim lv As ListView = DirectCast(sender, ListView)
+    '
+    '        ' 切换排序方向
+    '        lv.Sorting = If(lv.Sorting = SortOrder.Ascending, SortOrder.Descending, SortOrder.Ascending)
 
-        Catch ex As System.Exception
-            Debug.WriteLine($"lvMails_ColumnClick error: {ex.Message}")
-        End Try
-    End Sub
+    '        ' 使用自定义排序器
+    '        lv.ListViewItemSorter = New MailThreadPane.ListViewItemComparer(e.Column, lv.Sorting)
+    '        lv.Sort()
+    '
+    '        ' 更新高亮
+    '        If Not String.IsNullOrEmpty(currentMailEntryID) Then
+    '            UpdateHighlightByEntryID(String.Empty, currentMailEntryID)
+    '        End If
+    '
+    '    Catch ex As System.Exception
+    '        Debug.WriteLine("lvMails_ColumnClick error: " & ex.Message)
+    '    End Try
+    'End Sub
 
     Private Sub lvMails_DoubleClick(sender As Object, e As EventArgs)
         Try
             If lvMails.SelectedItems.Count > 0 Then
-                Dim mailId As String = lvMails.SelectedItems(0).Tag.ToString()
+                Dim selectedItem As ListViewItem = lvMails.SelectedItems(0)
+                Dim mailId As String = selectedItem.Tag.ToString()
                 If Not String.IsNullOrEmpty(mailId) Then
                     Dim mailItem As Object = Globals.ThisAddIn.Application.Session.GetItemFromID(mailId)
                     If mailItem IsNot Nothing Then
@@ -2091,14 +2182,15 @@ Public Class MailThreadPane
                 End If
             End If
         Catch ex As System.Exception
-            Debug.WriteLine($"lvMails_DoubleClick error: {ex.Message}")
+            Debug.WriteLine("lvMails_DoubleClick error: " & ex.Message)
         End Try
     End Sub
 
     Private Sub TaskList_DoubleClick(sender As Object, e As EventArgs)
         Try
             If taskList.SelectedItems.Count > 0 Then
-                Dim taskId As String = taskList.SelectedItems(0).Tag.ToString()
+                Dim selectedItem As ListViewItem = taskList.SelectedItems(0)
+                Dim taskId As String = selectedItem.Tag.ToString()
                 If Not String.IsNullOrEmpty(taskId) Then
                     Dim taskItem As Object = Globals.ThisAddIn.Application.Session.GetItemFromID(taskId)
                     If taskItem IsNot Nothing Then
@@ -2107,7 +2199,7 @@ Public Class MailThreadPane
                 End If
             End If
         Catch ex As System.Exception
-            Debug.WriteLine($"TaskList_DoubleClick error: {ex.Message}")
+            Debug.WriteLine("TaskList_DoubleClick error: " & ex.Message)
         End Try
     End Sub
     Private Sub BtnAddTask_Click(sender As Object, e As EventArgs)
@@ -2119,11 +2211,29 @@ Public Class MailThreadPane
 
             OutlookAddIn3.Handlers.TaskHandler.CreateNewTask(currentConversationId, currentMailEntryID)
         Catch ex As System.Exception
-            Debug.WriteLine($"BtnAddTask_Click error: {ex.Message}")
-            MessageBox.Show($"创建任务时出错: {ex.Message}")
+            Debug.WriteLine("BtnAddTask_Click error: " & ex.Message)
+            MessageBox.Show("创建任务时出错: " & ex.Message)
         End Try
     End Sub
 
+    Private Sub lvMails_ColumnClick(sender As Object, e As ColumnClickEventArgs) Handles lvMails.ColumnClick
+        Try
+            ' 列排序逻辑
+            Dim column As Integer = e.Column
+            If column = currentSortColumn Then
+                ' 如果点击的是当前排序列，则反转排序方向
+                currentSortOrder = Not currentSortOrder
+            Else
+                ' 如果点击的是新列，则设置为升序
+                currentSortColumn = column
+                currentSortOrder = True
+            End If
 
+            ' 应用排序
+            lvMails.ListViewItemSorter = New ListViewItemComparer(column, currentSortOrder)
+        Catch ex As System.Exception
+            Debug.WriteLine("lvMails_ColumnClick error: " & ex.Message)
+        End Try
+    End Sub
 
 End Class

@@ -1,4 +1,4 @@
-﻿Imports Microsoft.Office.Interop.Outlook
+Imports Microsoft.Office.Interop.Outlook
 Imports System.Diagnostics
 Imports System.Windows.Forms   ' 添加这行
 
@@ -84,13 +84,14 @@ Public Class MailHandler
             If TypeOf mail Is MailItem Then
                 Dim mailItem As MailItem = DirectCast(mail, MailItem)
                 Return $"<html><body style='font-family: Arial; padding: 10px; Font-size:12px;'>" &
-                       $"<h4>{If(String.IsNullOrEmpty(mailItem.Subject), "无主题", mailItem.Subject)}</h4>" &
+                       $"<h4 style='color: var(--theme-color, #0078d7);'>{If(String.IsNullOrEmpty(mailItem.Subject), "无主题", mailItem.Subject)}</h4>" &
                        $"<div style='margin-bottom: 10px;Font-size:12px;'>" &
-                       $"<strong>发件人:</strong> {If(String.IsNullOrEmpty(mailItem.SenderName), "未知", mailItem.SenderName)}<br/>" &
-                       $"<strong>时间:</strong> {If(mailItem.ReceivedTime = DateTime.MinValue, "未知", mailItem.ReceivedTime.ToString("yyyy-MM-dd HH:mm:ss"))}" &
+                       $"<strong style='color: var(--theme-color, #0078d7);'>发件人:</strong> {If(String.IsNullOrEmpty(mailItem.SenderName), "未知", mailItem.SenderName)}<br/>" &
+                       $"<strong style='color: var(--theme-color, #0078d7);'>时间:</strong> {If(mailItem.ReceivedTime = DateTime.MinValue, "未知", mailItem.ReceivedTime.ToString("yyyy-MM-dd HH:mm:ss"))}" &
                        $"</div>" &
-                       $"<div style='border-top: 1px solid #ccc; padding-top: 10px;'>" &
-                       $"{If(String.IsNullOrEmpty(mailItem.HTMLBody), "", mailItem.HTMLBody)}" &
+                       $"<div style='border-top: 1px solid var(--theme-color, #0078d7); padding-top: 10px;'>" &
+                       $"<style>.hidden-table {{display: none;}} img {{display: none;}}</style>" &
+                       $"{If(String.IsNullOrEmpty(mailItem.HTMLBody), "", ReplaceTableTag(mailItem.HTMLBody))}" &
                        $"</div>" &
                        "</body></html>"
 
@@ -98,27 +99,27 @@ Public Class MailHandler
             ElseIf TypeOf mail Is AppointmentItem Then
                 Dim appointment As AppointmentItem = DirectCast(mail, AppointmentItem)
                 Return $"<html><body style='font-family: Arial; padding: 10px;Font-size:12px;'>" &
-                       $"<h4>{If(String.IsNullOrEmpty(appointment.Subject), "无主题", appointment.Subject)}</h4>" &
+                       $"<h4 style='color: var(--theme-color, #0078d7);'>{If(String.IsNullOrEmpty(appointment.Subject), "无主题", appointment.Subject)}</h4>" &
                        $"<div style='margin-bottom: 10px;Font-size:12px;'>" &
-                       $"<strong>组织者:</strong> {If(String.IsNullOrEmpty(appointment.Organizer), "未知", appointment.Organizer)}<br/>" &
-                       $"<strong>开始时间:</strong> {If(appointment.Start = DateTime.MinValue, "未设置", appointment.Start.ToString("yyyy-MM-dd HH:mm:ss"))}<br/>" &
-                       $"<strong>结束时间:</strong> {If(appointment.End = DateTime.MinValue, "未设置", appointment.End.ToString("yyyy-MM-dd HH:mm:ss"))}<br/>" &
-                       $"<strong>地点:</strong> {If(String.IsNullOrEmpty(appointment.Location), "未设置", appointment.Location)}" &
+                       $"<strong style='color: var(--theme-color, #0078d7);'>组织者:</strong> {If(String.IsNullOrEmpty(appointment.Organizer), "未知", appointment.Organizer)}<br/>" &
+                       $"<strong style='color: var(--theme-color, #0078d7);'>开始时间:</strong> {If(appointment.Start = DateTime.MinValue, "未设置", appointment.Start.ToString("yyyy-MM-dd HH:mm:ss"))}<br/>" &
+                       $"<strong style='color: var(--theme-color, #0078d7);'>结束时间:</strong> {If(appointment.End = DateTime.MinValue, "未设置", appointment.End.ToString("yyyy-MM-dd HH:mm:ss"))}<br/>" &
+                       $"<strong style='color: var(--theme-color, #0078d7);'>地点:</strong> {If(String.IsNullOrEmpty(appointment.Location), "未设置", appointment.Location)}" &
                        $"</div>" &
-                       $"<div style='border-top: 1px solid #ccc; padding-top: 10px;Font-size:12px;'>" &
+                       $"<div style='border-top: 1px solid var(--theme-color, #0078d7); padding-top: 10px;Font-size:12px;'>" &
                        $"{If(String.IsNullOrEmpty(appointment.Body), "", appointment.Body.Replace(vbCrLf, "<br>").Replace("<br><br>", "<br>"))}" &
                        $"</div></body></html>"
             ElseIf TypeOf mail Is TaskItem Then
                 Dim task As TaskItem = DirectCast(mail, TaskItem)
                 Return $"<html><body style='font-family: Arial; padding: 10px;Font-size:12px;'>" &
-                       $"<h4>{If(String.IsNullOrEmpty(task.Subject), "无主题", task.Subject)}</h4>" &
+                       $"<h4 style='color: var(--theme-color, #0078d7);'>{If(String.IsNullOrEmpty(task.Subject), "无主题", task.Subject)}</h4>" &
                        $"<div style='margin-bottom: 10px;Font-size:12px;'>" &
-                       $"<strong>开始时间:</strong> {If(task.StartDate = DateTime.MinValue, "未设置", task.StartDate.ToString("yyyy-MM-dd HH:mm:ss"))}<br/>" &
-                       $"<strong>结束时间:</strong> {If(task.DueDate = DateTime.MinValue, "未设置", task.DueDate.ToString("yyyy-MM-dd HH:mm:ss"))}<br/>" &
-                       $"<strong>完成度:</strong> {task.PercentComplete}%<br/>" &
-                       $"<strong>状态:</strong> {GetTaskStatus(task.Status)}" &
+                       $"<strong style='color: var(--theme-color, #0078d7);'>开始时间:</strong> {If(task.StartDate = DateTime.MinValue, "未设置", task.StartDate.ToString("yyyy-MM-dd HH:mm:ss"))}<br/>" &
+                       $"<strong style='color: var(--theme-color, #0078d7);'>结束时间:</strong> {If(task.DueDate = DateTime.MinValue, "未设置", task.DueDate.ToString("yyyy-MM-dd HH:mm:ss"))}<br/>" &
+                       $"<strong style='color: var(--theme-color, #0078d7);'>完成度:</strong> {task.PercentComplete}%<br/>" &
+                       $"<strong style='color: var(--theme-color, #0078d7);'>状态:</strong> {GetTaskStatus(task.Status)}" &
                        $"</div>" &
-                       $"<div style='border-top: 1px solid #ccc; padding-top: 10px;Font-size:12px;'>" &
+                        $"<div style='border-top: 1px solid var(--theme-color, #0078d7); padding-top: 10px;Font-size:12px;'>" &
                        $"{If(String.IsNullOrEmpty(task.Body), "", task.Body.Replace(vbCrLf, "<br>").Replace("<br><br>", "<br>"))}" &
                        $"</div></body></html>"
             ElseIf TypeOf mail Is MeetingItem Then
