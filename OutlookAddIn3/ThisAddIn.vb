@@ -52,7 +52,7 @@ Public Class ThisAddIn
 
     Private Sub InitializeMailPane()
         mailThreadPane = New MailThreadPane()
-        customTaskPane = Me.CustomTaskPanes.Add(mailThreadPane, "相关邮件v1")
+        customTaskPane = Me.CustomTaskPanes.Add(mailThreadPane, "相关邮件v1.1")
         customTaskPane.Width = 400
         customTaskPane.Visible = True
         ' Initialize with empty values
@@ -240,7 +240,7 @@ Public Class ThisAddIn
 
             ' 为Inspector创建任务窗格
             Dim inspectorPane As New MailThreadPane()
-            Dim inspectorTaskPane As Microsoft.Office.Tools.CustomTaskPane = Me.CustomTaskPanes.Add(inspectorPane, "相关邮件v1", inspector)
+            Dim inspectorTaskPane As Microsoft.Office.Tools.CustomTaskPane = Me.CustomTaskPanes.Add(inspectorPane, "相关邮件v1.1", inspector)
             inspectorTaskPane.Width = 400
             inspectorTaskPane.Visible = True
 

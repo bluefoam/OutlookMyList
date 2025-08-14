@@ -1,4 +1,4 @@
-﻿Imports System.Windows.Forms
+Imports System.Windows.Forms
 Imports Microsoft.Office.Interop.Outlook
 Imports OutlookAddIn3.Utils
 Imports OutlookAddIn3.Models
@@ -1050,7 +1050,8 @@ Public Class MailThreadPane
                 End If
             End If
 
-            Dim info = Await GetContactInfoAsync()
+            ' 在后台线程中执行耗时的Outlook操作
+            Dim info = Await Task.Run(Function() GetContactInfoAsync().Result)
 
             If Me.InvokeRequired Then
                 Me.Invoke(Sub()
@@ -1448,27 +1449,35 @@ Public Class MailThreadPane
     End Sub
 
     Private Async Sub btnNewNote_Click(sender As Object, e As EventArgs)
-        'If Not String.IsNullOrEmpty(currentConversationId) Then
-        Dim mailItem As Object = Globals.ThisAddIn.Application.Session.GetItemFromID(currentMailEntryID)
-        Dim subject As String = ""
+        Try
+            ' 在后台线程中获取邮件主题，避免阻塞UI
+            Dim subject As String = Await Task.Run(Function()
+                                                        Try
+                                                            Dim mailItem As Object = Globals.ThisAddIn.Application.Session.GetItemFromID(currentMailEntryID)
+                                                            If mailItem IsNot Nothing Then
+                                                                ' 根据不同类型获取主题
+                                                                If TypeOf mailItem Is Outlook.MailItem Then
+                                                                    Return DirectCast(mailItem, Outlook.MailItem).Subject
+                                                                ElseIf TypeOf mailItem Is Outlook.AppointmentItem Then
+                                                                    Return DirectCast(mailItem, Outlook.AppointmentItem).Subject
+                                                                ElseIf TypeOf mailItem Is Outlook.MeetingItem Then
+                                                                    Return DirectCast(mailItem, Outlook.MeetingItem).Subject
+                                                                ElseIf TypeOf mailItem Is Outlook.TaskItem Then
+                                                                    Return DirectCast(mailItem, Outlook.TaskItem).Subject
+                                                                End If
+                                                            End If
+                                                            Return ""
+                                                        Catch ex As System.Exception
+                                                            Debug.WriteLine($"获取邮件主题时出错: {ex.Message}")
+                                                            Return ""
+                                                        End Try
+                                                    End Function)
 
-        If mailItem IsNot Nothing Then
-            ' 根据不同类型获取主题
-            If TypeOf mailItem Is Outlook.MailItem Then
-                subject = DirectCast(mailItem, Outlook.MailItem).Subject
-            ElseIf TypeOf mailItem Is Outlook.AppointmentItem Then
-                subject = DirectCast(mailItem, Outlook.AppointmentItem).Subject
-            ElseIf TypeOf mailItem Is Outlook.MeetingItem Then
-                subject = DirectCast(mailItem, Outlook.MeetingItem).Subject
-            ElseIf TypeOf mailItem Is Outlook.TaskItem Then
-                subject = DirectCast(mailItem, Outlook.TaskItem).Subject
-            End If
-        End If
-
-        Await SaveToWolaiAsync(currentConversationId, subject)
-        'Else
-        'MessageBox.Show("请先选择一封邮件")
-        'End If
+            Await SaveToWolaiAsync(currentConversationId, subject)
+        Catch ex As System.Exception
+            Debug.WriteLine($"btnNewNote_Click error: {ex.Message}")
+            MessageBox.Show($"创建笔记时出错: {ex.Message}")
+        End Try
     End Sub
 
     Private Sub BindEvents()
@@ -1514,10 +1523,8 @@ Public Class MailThreadPane
             End If
 
             If needReload Then
-                ' 使用任务并行处理加载会话邮件
-                Await Task.Run(Sub()
-                                   Me.Invoke(Sub() LoadConversationMails(mailEntryID))
-                               End Sub)
+                ' 异步加载会话邮件，完全不阻塞主窗口
+                Await LoadConversationMailsAsync(mailEntryID)
 
                 ' 更新当前会话ID并检查笔记
                 If Not String.Equals(conversationId, currentConversationId, StringComparison.OrdinalIgnoreCase) Then
@@ -1574,10 +1581,8 @@ Public Class MailThreadPane
             If needReload Then
                 ' 暂时移除事件处理器，避免重复触发
                 'RemoveHandler lvMails.SelectedIndexChanged, AddressOf lvMails_SelectedIndexChanged
-                ' 使用任务并行处理加载会话邮件
-                Await Task.Run(Sub()
-                                   Me.Invoke(Sub() LoadConversationMails(mailEntryID))
-                               End Sub)
+                ' 使用异步方法加载会话邮件
+                Await LoadConversationMailsAsync(mailEntryID)
                 'LoadConversationMails(mailEntryID)
                 ' 重新添加事件处理器
                 'AddHandler lvMails.SelectedIndexChanged, AddressOf lvMails_SelectedIndexChanged
@@ -1606,6 +1611,215 @@ Public Class MailThreadPane
     End Function
 
 
+    ' 新的异步方法，完全在后台线程执行耗时操作
+    Private Async Function LoadConversationMailsAsync(currentMailEntryID As String) As Task
+        If String.IsNullOrEmpty(currentMailEntryID) Then
+            Return
+        End If
+
+        Dim startTime = DateTime.Now
+        Debug.WriteLine($"开始异步加载会话邮件: {startTime}")
+
+        ' 在UI线程中显示加载状态
+        If Me.InvokeRequired Then
+            Me.Invoke(Sub()
+                          lvMails.BeginUpdate()
+                          lvMails.Items.Clear()
+                          ' 可以添加一个"正在加载..."的提示项
+                          Dim loadingItem As New ListViewItem("正在加载会话邮件...")
+                          loadingItem.SubItems.Add("")
+                          loadingItem.SubItems.Add("")
+                          loadingItem.SubItems.Add("")
+                          lvMails.Items.Add(loadingItem)
+                          lvMails.EndUpdate()
+                      End Sub)
+        Else
+            lvMails.BeginUpdate()
+            lvMails.Items.Clear()
+            Dim loadingItem As New ListViewItem("正在加载会话邮件...")
+            loadingItem.SubItems.Add("")
+            loadingItem.SubItems.Add("")
+            loadingItem.SubItems.Add("")
+            lvMails.Items.Add(loadingItem)
+            lvMails.EndUpdate()
+        End If
+
+        ' 在后台线程中执行耗时的Outlook操作
+        Await Task.Run(Sub()
+                           LoadConversationMailsBackground(currentMailEntryID, startTime)
+                       End Sub)
+    End Function
+
+    ' 后台线程执行的邮件加载逻辑
+    Private Sub LoadConversationMailsBackground(currentMailEntryID As String, startTime As DateTime)
+        Dim currentItem As Object = Nothing
+        Dim conversation As Outlook.Conversation = Nothing
+        Dim table As Outlook.Table = Nothing
+        Dim allItems As New List(Of ListViewItem)()
+        Dim tempMailItems As New List(Of (Index As Integer, EntryID As String))()
+
+        Try
+            Try
+                currentItem = Globals.ThisAddIn.Application.Session.GetItemFromID(currentMailEntryID)
+                If currentItem Is Nothing Then
+                    Throw New System.Exception("无法获取邮件项")
+                End If
+
+                ' 获取 conversation 对象前先检查类型
+                If TypeOf currentItem Is Outlook.MailItem Then
+                    conversation = DirectCast(currentItem, Outlook.MailItem).GetConversation()
+                ElseIf TypeOf currentItem Is Outlook.AppointmentItem Then
+                    conversation = DirectCast(currentItem, Outlook.AppointmentItem).GetConversation()
+                End If
+
+                If conversation Is Nothing Then
+                    ' 处理没有会话的单个邮件
+                    Dim entryId As String = GetPermanentEntryID(currentItem)
+                    Dim lvi As New ListViewItem(GetItemImageText(currentItem)) With {
+                    .Tag = entryId,
+                    .Name = "0"
+                }
+
+                    With lvi.SubItems
+                        If TypeOf currentItem Is Outlook.MailItem Then
+                            Dim mail As Outlook.MailItem = DirectCast(currentItem, Outlook.MailItem)
+                            .Add(mail.ReceivedTime.ToString("yyyy-MM-dd HH:mm"))
+                            .Add(mail.SenderName)
+                            .Add(mail.Subject)
+                        ElseIf TypeOf currentItem Is Outlook.AppointmentItem Then
+                            Dim appt As Outlook.AppointmentItem = DirectCast(currentItem, Outlook.AppointmentItem)
+                            .Add(appt.Start.ToString("yyyy-MM-dd HH:mm"))
+                            .Add(appt.Organizer)
+                            .Add(appt.Subject)
+                        End If
+                    End With
+
+                    allItems.Add(lvi)
+                    tempMailItems.Add((0, entryId))
+
+                    Debug.WriteLine($"处理单个邮件，耗时: {(DateTime.Now - startTime).TotalMilliseconds}ms")
+                Else
+                    ' 使用批量处理方式加载会话邮件
+                    table = conversation.GetTable()
+                    Try
+                        ' 设置需要的列
+                        table.Columns.Add("EntryID")
+                        table.Columns.Add("SentOn")
+                        table.Columns.Add("ReceivedTime")
+                        table.Columns.Add("SenderName")
+                        table.Columns.Add("Subject")
+                        table.Columns.Add("MessageClass")
+
+                        ' 预分配容量，提高性能
+                        Dim currentIndex As Integer = 0
+                        Dim batchSize As Integer = 0
+
+                        ' 一次性收集所有数据
+                        Do Until table.EndOfTable
+                            Dim row As Outlook.Row = table.GetNextRow()
+                            Dim mailItem As Object = Nothing
+                            Try
+                                mailItem = Globals.ThisAddIn.Application.Session.GetItemFromID(row("EntryID").ToString())
+                                If mailItem IsNot Nothing Then
+                                    Dim entryId As String = GetPermanentEntryID(mailItem)
+
+                                    ' 创建 ListViewItem
+                                    Dim lvi As New ListViewItem(GetItemImageText(mailItem)) With {
+                                    .Tag = entryId,
+                                    .Name = currentIndex.ToString()
+                                }
+
+                                    ' 添加所有列
+                                    With lvi.SubItems
+                                        If TypeOf mailItem Is Outlook.MeetingItem Then
+                                            Dim meeting As Outlook.MeetingItem = DirectCast(mailItem, Outlook.MeetingItem)
+                                            .Add(meeting.CreationTime.ToString("yyyy-MM-dd HH:mm"))
+                                            .Add(meeting.SenderName)
+                                            .Add(meeting.Subject)
+                                        Else
+                                            .Add(If(row("ReceivedTime") IsNot Nothing AndAlso Not String.IsNullOrEmpty(row("ReceivedTime").ToString()),
+                                            DateTime.Parse(row("ReceivedTime").ToString()).ToString("yyyy-MM-dd HH:mm"),
+                                            "Unknown Date"))
+                                            .Add(If(row("SenderName") IsNot Nothing, row("SenderName").ToString(), "Unknown Sender"))
+                                            .Add(If(row("Subject") IsNot Nothing, row("Subject").ToString(), "Unknown Subject"))
+                                        End If
+                                    End With
+
+                                    ' 添加到临时列表
+                                    allItems.Add(lvi)
+                                    tempMailItems.Add((currentIndex, entryId))
+                                    currentIndex += 1
+                                    batchSize += 1
+                                End If
+                            Finally
+                                If mailItem IsNot Nothing Then
+                                    Runtime.InteropServices.Marshal.ReleaseComObject(mailItem)
+                                End If
+                                If row IsNot Nothing Then
+                                    Runtime.InteropServices.Marshal.ReleaseComObject(row)
+                                End If
+                            End Try
+                        Loop
+
+                        Debug.WriteLine($"收集了 {batchSize} 封邮件，耗时: {(DateTime.Now - startTime).TotalMilliseconds}ms")
+                    Finally
+                        If table IsNot Nothing Then
+                            Runtime.InteropServices.Marshal.ReleaseComObject(table)
+                        End If
+                    End Try
+                End If
+            Catch ex As System.Exception
+                Debug.WriteLine($"处理邮件时出错: {ex.Message}")
+                ' 在UI线程中显示错误信息
+                Me.Invoke(Sub()
+                              lvMails.BeginUpdate()
+                              lvMails.Items.Clear()
+                              Dim errorItem As New ListViewItem($"加载失败: {ex.Message}")
+                              errorItem.SubItems.Add("")
+                              errorItem.SubItems.Add("")
+                              errorItem.SubItems.Add("")
+                              lvMails.Items.Add(errorItem)
+                              lvMails.EndUpdate()
+                          End Sub)
+            End Try
+        Finally
+            ' 释放 COM 对象
+            If conversation IsNot Nothing Then
+                Runtime.InteropServices.Marshal.ReleaseComObject(conversation)
+            End If
+            If currentItem IsNot Nothing Then
+                Runtime.InteropServices.Marshal.ReleaseComObject(currentItem)
+            End If
+        End Try
+
+        ' 在UI线程中更新界面
+        Me.Invoke(Sub()
+                      Try
+                          lvMails.BeginUpdate()
+                          lvMails.Items.Clear()
+                          mailItems.Clear()
+                          
+                          If allItems.Count > 0 Then
+                              lvMails.Items.AddRange(allItems.ToArray())
+                              mailItems = tempMailItems
+                              
+                              ' 设置排序
+                              lvMails.Sorting = SortOrder.Descending
+                              lvMails.ListViewItemSorter = New ListViewItemComparer(1, SortOrder.Descending)
+                              lvMails.Sort()
+                              
+                              ' 设置高亮并确保可见
+                              UpdateHighlightByEntryID(String.Empty, currentMailEntryID)
+                          End If
+                          
+                          Debug.WriteLine($"完成异步加载会话邮件，总耗时: {(DateTime.Now - startTime).TotalMilliseconds}ms")
+                      Finally
+                          lvMails.EndUpdate()
+                      End Try
+                  End Sub)
+    End Sub
+
+    ' 保留原有的同步方法作为备用
     Private Sub LoadConversationMails(currentMailEntryID As String)
         If String.IsNullOrEmpty(currentMailEntryID) Then
             Return
@@ -2063,47 +2277,54 @@ Public Class MailThreadPane
                 UpdateHighlightByEntryID(currentMailEntryID, mailId)
                 currentMailEntryID = mailId
 
-                ' 获取当前选中项的内容
-                Dim currentItem As Object = Globals.ThisAddIn.Application.Session.GetItemFromID(mailId)
-                If TypeOf currentItem Is Outlook.MailItem Then
-                    wbContent.DocumentText = MailHandler.DisplayMailContent(mailId)
-                ElseIf TypeOf currentItem Is Outlook.MeetingItem Then
-                    ' 对于会议项目，尝试获取关联的邮件
-                    'Dim meetingItem = DirectCast(currentItem, Outlook.MeetingItem)
-                    'Dim associatedMail As Outlook.MailItem = meetingItem.GetAssociatedItem()
-                    'If associatedMail IsNot Nothing Then
-                    '    wbContent.DocumentText = MailHandler.DisplayMailContent(associatedMail.EntryID)
-                    'Else
-                    wbContent.DocumentText = MailHandler.DisplayMailContent(mailId)
-                    'End If
-                ElseIf TypeOf currentItem Is Outlook.AppointmentItem Then
-                    ' 对于约会项目，尝试查找相关的会议请求邮件
-                    'Dim appointmentItem = DirectCast(currentItem, Outlook.AppointmentItem)
-                    'Try
-                    '    ' 使用 GetAssociatedAppointment 方法获取关联的会议请求
-                    '    Dim namespace1 = Globals.ThisAddIn.Application.Session
-                    '    Dim inbox = namespace1.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderInbox)
-                    '    ' 使用会议组织者和主题来查找相关邮件
-                    '    Dim filter = $"[MessageClass]='IPM.Schedule.Meeting.Request' AND " &
-                    '               $"[Subject] LIKE '%{appointmentItem.Subject}%' AND " &
-                    '               $"[SenderName] = '{appointmentItem.Organizer}'"
-                    '    Dim items = inbox.Items.Restrict(filter)
-                    '
-                    '    If items.Count > 0 Then
-                    '        Dim meetingMail As Outlook.MailItem = items.GetFirst()
-                    '        wbContent.DocumentText = MailHandler.DisplayMailContent(meetingMail.EntryID)
-                    '    Else
-                    '        wbContent.DocumentText = MailHandler.DisplayMailContent(mailId)
-                    '    End If
-                    'Catch ex As System.Exception
-                    '    Debug.WriteLine($"查找会议邮件时出错: {ex.Message}")
-                    wbContent.DocumentText = MailHandler.DisplayMailContent(mailId)
-                End If
+                ' 异步加载邮件内容，避免阻塞UI
+                LoadMailContentAsync(mailId)
             Else
                 wbContent.DocumentText = MailHandler.DisplayMailContent(mailId)
             End If
         Catch ex As System.Exception
             Debug.WriteLine($"lvMails_SelectedIndexChanged error: {ex.Message}")
+        End Try
+    End Sub
+
+    ' 异步加载邮件内容的方法
+    Private Async Sub LoadMailContentAsync(mailId As String)
+        Try
+            ' 在UI线程显示加载状态
+            wbContent.DocumentText = "<html><body>正在加载邮件内容...</body></html>"
+
+            ' 在后台线程中执行耗时的Outlook操作
+            Dim content As String = Await Task.Run(Function()
+                                                        Try
+                                                            Dim currentItem As Object = Globals.ThisAddIn.Application.Session.GetItemFromID(mailId)
+                                                            If TypeOf currentItem Is Outlook.MailItem Then
+                                                                Return MailHandler.DisplayMailContent(mailId)
+                                                            ElseIf TypeOf currentItem Is Outlook.MeetingItem Then
+                                                                Return MailHandler.DisplayMailContent(mailId)
+                                                            ElseIf TypeOf currentItem Is Outlook.AppointmentItem Then
+                                                                Return MailHandler.DisplayMailContent(mailId)
+                                                            Else
+                                                                Return MailHandler.DisplayMailContent(mailId)
+                                                            End If
+                                                        Catch ex As System.Exception
+                                                            Debug.WriteLine($"LoadMailContentAsync background error: {ex.Message}")
+                                                            Return $"<html><body>加载邮件内容时出错: {ex.Message}</body></html>"
+                                                        End Try
+                                                    End Function)
+
+            ' 回到UI线程更新内容
+            If Me.InvokeRequired Then
+                Me.Invoke(Sub() wbContent.DocumentText = content)
+            Else
+                wbContent.DocumentText = content
+            End If
+        Catch ex As System.Exception
+            Debug.WriteLine($"LoadMailContentAsync error: {ex.Message}")
+            If Me.InvokeRequired Then
+                Me.Invoke(Sub() wbContent.DocumentText = $"<html><body>加载邮件内容时出错: {ex.Message}</body></html>")
+            Else
+                wbContent.DocumentText = $"<html><body>加载邮件内容时出错: {ex.Message}</body></html>"
+            End If
         End Try
     End Sub
 
