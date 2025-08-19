@@ -45,7 +45,7 @@ Namespace OutlookAddIn3.Handlers
 
         Public Shared Function GetMailItem(mailEntryID As String) As MailItem
             Try
-                Dim item As Object = Globals.ThisAddIn.Application.Session.GetItemFromID(mailEntryID)
+                Dim item As Object = OutlookAddIn3.Utils.OutlookUtils.SafeGetItemFromID(mailEntryID)
                 If item IsNot Nothing AndAlso TypeOf item Is MailItem Then
                     Return DirectCast(item, MailItem)
                 End If
@@ -71,23 +71,31 @@ Namespace OutlookAddIn3.Handlers
 
         ' 修改 TaskInfo 的引用，使用完整命名空间
         Private Shared Sub AddTaskToList(taskList As ListView, task As TaskItem, linkedMailSubject As String)
-            Dim taskInfo As New OutlookAddIn3.Models.TaskInfo With {
-                .TaskEntryID = task.EntryID,
-                .MailEntryID = If(task.Links.Count > 0, DirectCast(task.Links(1).Item, MailItem).EntryID, String.Empty),
-                .Subject = task.Subject,
-                .DueDate = If(task.DueDate = #12:00:00 AM#, Nothing, task.DueDate),
-                .Status = task.Status.ToString(),
-                .PercentComplete = task.PercentComplete,
-                .LinkedMailSubject = linkedMailSubject
-            }
-
             Try
+                Dim taskInfo As New OutlookAddIn3.Models.TaskInfo With {
+                    .TaskEntryID = task.EntryID,
+                    .MailEntryID = If(task.Links.Count > 0, DirectCast(task.Links(1).Item, MailItem).EntryID, String.Empty),
+                    .Subject = task.Subject,
+                    .DueDate = If(task.DueDate = #12:00:00 AM#, Nothing, task.DueDate),
+                    .Status = task.Status.ToString(),
+                    .PercentComplete = task.PercentComplete,
+                    .LinkedMailSubject = linkedMailSubject
+                }
+
                 Dim listItem As New ListViewItem(task.Subject)
                 listItem.SubItems.Add(If(task.DueDate = DateTime.MinValue, "", task.DueDate.ToString("yyyy-MM-dd")))
                 listItem.SubItems.Add(GetTaskStatusText(task.Status))
                 listItem.SubItems.Add($"{task.PercentComplete}%")
                 listItem.SubItems.Add("(标准任务)")
                 listItem.Tag = taskInfo
+            Catch ex As System.Runtime.InteropServices.COMException
+                Debug.WriteLine($"COM异常访问任务属性 (HRESULT: {ex.HResult:X8}): {ex.Message}")
+                Dim listItem As New ListViewItem("无法访问任务")
+                listItem.SubItems.Add("无法访问")
+                listItem.SubItems.Add("无法访问")
+                listItem.SubItems.Add("无法访问")
+                listItem.SubItems.Add("(标准任务)")
+                listItem.Tag = Nothing
                 taskList.Items.Add(listItem)
             Catch ex As System.Exception
                 Debug.WriteLine($"添加任务到列表时出错: {ex.Message}")
@@ -97,7 +105,7 @@ Namespace OutlookAddIn3.Handlers
         Private Shared Function GetMailConversationID(mailEntryID As String) As String
             Try
                 Dim mail As MailItem = DirectCast(
-                    Globals.ThisAddIn.Application.Session.GetItemFromID(mailEntryID),
+                    OutlookAddIn3.Utils.OutlookUtils.SafeGetItemFromID(mailEntryID),
                     MailItem)
                 Return mail.ConversationID
             Catch ex As System.Exception
@@ -134,25 +142,45 @@ Namespace OutlookAddIn3.Handlers
                 For Each item As Object In items
                     If TypeOf item Is MailItem Then
                         Dim mail As MailItem = DirectCast(item, MailItem)
-                        ' 直接使用 IsMarkedAsTask 属性判断
-                        If mail.IsMarkedAsTask Then
-                            Dim taskInfo As New TaskInfo With {
-                                .Subject = mail.TaskSubject,
-                                .MailEntryID = mail.EntryID,
-                                .RelatedMailSubject = mail.Subject,
-                                .DueDate = If(mail.TaskDueDate = DateTime.MinValue, Nothing, mail.TaskDueDate),
-                                .Status = GetTaskStatusText(mail.TaskStatus),
-                                .PercentComplete = mail.PercentComplete
-                            }
+                        Try
+                            ' 直接使用 IsMarkedAsTask 属性判断
+                            If mail.IsMarkedAsTask Then
+                                Dim taskInfo As New TaskInfo With {
+                                    .Subject = mail.TaskSubject,
+                                    .MailEntryID = mail.EntryID,
+                                    .RelatedMailSubject = mail.Subject,
+                                    .DueDate = If(mail.TaskDueDate = DateTime.MinValue, Nothing, mail.TaskDueDate),
+                                    .Status = GetTaskStatusText(mail.TaskStatus),
+                                    .PercentComplete = mail.PercentComplete
+                                }
 
-                            Dim listItem As New ListViewItem(taskInfo.Subject)
-                            listItem.SubItems.Add(If(taskInfo.DueDate.HasValue, taskInfo.DueDate.Value.ToString("yyyy-MM-dd"), ""))
-                            listItem.SubItems.Add(taskInfo.Status)
-                            listItem.SubItems.Add($"{taskInfo.PercentComplete}%")
-                            listItem.SubItems.Add(taskInfo.RelatedMailSubject)
-                            listItem.Tag = taskInfo
+                                Dim listItem As New ListViewItem(taskInfo.Subject)
+                                listItem.SubItems.Add(If(taskInfo.DueDate.HasValue, taskInfo.DueDate.Value.ToString("yyyy-MM-dd"), ""))
+                                listItem.SubItems.Add(taskInfo.Status)
+                                listItem.SubItems.Add($"{taskInfo.PercentComplete}%")
+                                listItem.SubItems.Add(taskInfo.RelatedMailSubject)
+                                listItem.Tag = taskInfo
+                                taskList.Items.Add(listItem)
+                            End If
+                        Catch ex As System.Runtime.InteropServices.COMException
+                            Debug.WriteLine($"COM异常访问邮件任务属性 (HRESULT: {ex.HResult:X8}): {ex.Message}")
+                            Dim listItem As New ListViewItem("无法访问任务")
+                            listItem.SubItems.Add("无法访问")
+                            listItem.SubItems.Add("无法访问")
+                            listItem.SubItems.Add("无法访问")
+                            listItem.SubItems.Add("无法访问")
+                            listItem.Tag = Nothing
                             taskList.Items.Add(listItem)
-                        End If
+                        Catch ex As System.Exception
+                            Debug.WriteLine($"访问邮件任务属性时发生异常: {ex.Message}")
+                            Dim listItem As New ListViewItem("无法访问任务")
+                            listItem.SubItems.Add("无法访问")
+                            listItem.SubItems.Add("无法访问")
+                            listItem.SubItems.Add("无法访问")
+                            listItem.SubItems.Add("无法访问")
+                            listItem.Tag = Nothing
+                            taskList.Items.Add(listItem)
+                        End Try
                     End If
                 Next
             Catch ex As System.Exception
@@ -174,22 +202,28 @@ Namespace OutlookAddIn3.Handlers
                 For Each item As Object In items
                     If TypeOf item Is MailItem Then
                         Dim mail As MailItem = DirectCast(item, MailItem)
-                        Dim props As ItemProperties = mail.ItemProperties
+                        Try
+                            Dim props As ItemProperties = mail.ItemProperties
 
-                        ' 从邮件的任务属性中获取信息
-                        If props("TaskSubject") IsNot Nothing Then
-                            tasks.Add(New TaskInfo With {
-                                .Subject = props("TaskSubject").Value.ToString(),
-                                .MailEntryID = mail.EntryID,
-                                .RelatedMailSubject = mail.Subject,
-                                .DueDate = If(props("TaskDueDate")?.Value IsNot Nothing,
-                                            CDate(props("TaskDueDate").Value), Nothing),
-                                .Status = If(props("TaskStatus")?.Value IsNot Nothing,
-                                           props("TaskStatus").Value.ToString(), "未开始"),
-                                .PercentComplete = If(props("TaskComplete")?.Value IsNot Nothing,
-                                                    CInt(props("TaskComplete").Value), 0)
-                            })
-                        End If
+                            ' 从邮件的任务属性中获取信息
+                            If props("TaskSubject") IsNot Nothing Then
+                                tasks.Add(New TaskInfo With {
+                                    .Subject = props("TaskSubject").Value.ToString(),
+                                    .MailEntryID = mail.EntryID,
+                                    .RelatedMailSubject = mail.Subject,
+                                    .DueDate = If(props("TaskDueDate")?.Value IsNot Nothing,
+                                                CDate(props("TaskDueDate").Value), Nothing),
+                                    .Status = If(props("TaskStatus")?.Value IsNot Nothing,
+                                               props("TaskStatus").Value.ToString(), "未开始"),
+                                    .PercentComplete = If(props("TaskComplete")?.Value IsNot Nothing,
+                                                        CInt(props("TaskComplete").Value), 0)
+                                })
+                            End If
+                        Catch ex As System.Runtime.InteropServices.COMException
+                            Debug.WriteLine($"COM异常访问邮件任务属性 (HRESULT: {ex.HResult:X8}): {ex.Message}")
+                        Catch ex As System.Exception
+                            Debug.WriteLine($"访问邮件任务属性时发生异常: {ex.Message}")
+                        End Try
                     End If
                 Next
             Catch ex As System.Exception
@@ -235,18 +269,24 @@ Namespace OutlookAddIn3.Handlers
                 ' 在这里实现你的邮件任务标记解析逻辑
                 ' 例如：查找特定格式的标记，如 [Task]、TODO: 等
                 ' 这是一个示例实现
-                Dim body As String = mail.Body
-                Dim lines = body.Split(New String() {vbCrLf, vbCr, vbLf}, StringSplitOptions.None)
+                Try
+                    Dim body As String = mail.Body
+                    Dim lines = body.Split(New String() {vbCrLf, vbCr, vbLf}, StringSplitOptions.None)
 
-                For Each line In lines
-                    If line.Trim().StartsWith("[Task]") OrElse line.Trim().StartsWith("TODO:") Then
-                        tasks.Add(New TaskInfo With {
-                            .Subject = line.Trim(),
-                            .MailEntryID = mail.EntryID,
-                            .RelatedMailSubject = mail.Subject
-                        })
-                    End If
-                Next
+                    For Each line In lines
+                        If line.Trim().StartsWith("[Task]") OrElse line.Trim().StartsWith("TODO:") Then
+                            tasks.Add(New TaskInfo With {
+                                .Subject = line.Trim(),
+                                .MailEntryID = mail.EntryID,
+                                .RelatedMailSubject = mail.Subject
+                            })
+                        End If
+                    Next
+                Catch ex As System.Runtime.InteropServices.COMException
+                    Debug.WriteLine($"COM异常访问邮件属性 (HRESULT: {ex.HResult:X8}): {ex.Message}")
+                Catch ex As System.Exception
+                    Debug.WriteLine($"访问邮件属性时发生异常: {ex.Message}")
+                End Try
             Catch ex As System.Exception
                 Debug.WriteLine($"ParseTasksFromMail error: {ex.Message}")
             End Try

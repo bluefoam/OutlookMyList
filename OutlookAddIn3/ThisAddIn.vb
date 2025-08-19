@@ -2,6 +2,7 @@
 Imports System.Collections.Generic
 Imports System.Windows.Forms
 Imports System.Drawing
+Imports System.Threading.Tasks
 Imports Microsoft.Win32
 
 Public Class ThisAddIn
@@ -55,8 +56,15 @@ Public Class ThisAddIn
         customTaskPane = Me.CustomTaskPanes.Add(mailThreadPane, "相关邮件v1.1")
         customTaskPane.Width = 400
         customTaskPane.Visible = True
-        ' Initialize with empty values
-        mailThreadPane.UpdateMailList(String.Empty, String.Empty)
+
+        ' 初始化后，检查是否有当前选中的邮件并加载内容
+        If currentExplorer IsNot Nothing AndAlso currentExplorer.Selection.Count > 0 Then
+            Dim currentItem As Object = currentExplorer.Selection(1)
+            If Not mailThreadPane.IsWebViewUpdateSuppressed Then
+                ' 延迟加载当前选中的邮件内容
+                mailThreadPane.BeginInvoke(Sub() UpdateMailContent(currentItem))
+            End If
+        End If
     End Sub
 
     Private Sub currentExplorer_SelectionChange() Handles currentExplorer.SelectionChange
@@ -64,21 +72,25 @@ Public Class ThisAddIn
 
         If currentExplorer.Selection.Count > 0 Then
             Dim selection As Object = currentExplorer.Selection(1)
-            UpdateMailContent(selection)
+            ' 在抑制期间跳过更新，避免 ContactInfoList 构造时不断刷新 WebView
+            If Not mailThreadPane.IsWebViewUpdateSuppressed Then
+                ' 推迟处理，避免在事件回调中访问项目属性
+                mailThreadPane.BeginInvoke(Sub() UpdateMailContent(selection))
+            End If
         End If
     End Sub
 
-    Public Sub ToggleTaskPane()
+    Public Async Sub ToggleTaskPane()
         If customTaskPane IsNot Nothing Then
             customTaskPane.Visible = Not customTaskPane.Visible
             ' 显示窗格时，获取当前选中项并更新内容
             If customTaskPane.Visible Then
                 If currentExplorer IsNot Nothing AndAlso currentExplorer.Selection.Count > 0 Then
                     Dim currentItem As Object = currentExplorer.Selection(1)
-                    UpdateMailContent(currentItem)
-                Else
-                    ' 如果没有选中项，清空内容
-                    mailThreadPane?.UpdateMailList(String.Empty, String.Empty)
+                    If Not mailThreadPane.IsWebViewUpdateSuppressed Then
+                        ' 使用 BeginInvoke 延迟处理，避免在事件回调中访问项目属性
+                        mailThreadPane.BeginInvoke(Sub() UpdateMailContent(currentItem))
+                    End If
                 End If
             End If
         End If
@@ -86,7 +98,10 @@ Public Class ThisAddIn
 
     Public Sub UpdateMailList()
         If mailThreadPane IsNot Nothing Then
-            mailThreadPane.UpdateMailList(String.Empty, String.Empty)
+            If currentExplorer IsNot Nothing AndAlso currentExplorer.Selection.Count > 0 Then
+                Dim currentItem As Object = currentExplorer.Selection(1)
+                mailThreadPane.BeginInvoke(Sub() UpdateMailContent(currentItem))
+            End If
         End If
     End Sub
 
@@ -128,9 +143,10 @@ Public Class ThisAddIn
         Try
             ' 检查任务窗格是否可见
             If mailThreadPane IsNot Nothing AndAlso customTaskPane IsNot Nothing AndAlso customTaskPane.Visible Then
-                ' 避免与 SelectionChange 事件冲突
-                System.Threading.Thread.Sleep(100)
-                UpdateMailContent(item)
+                ' 使用 BeginInvoke 推迟处理，避免与 SelectionChange 事件冲突且不阻塞UI
+                If Not mailThreadPane.IsWebViewUpdateSuppressed Then
+                    mailThreadPane.BeginInvoke(Sub() UpdateMailContent(item))
+                End If
             End If
         Catch ex As Exception
             Debug.WriteLine($"ItemLoad error: {ex.Message}")
@@ -151,14 +167,10 @@ Public Class ThisAddIn
 
             If TypeOf item Is Outlook.MailItem Then
                 Dim mail As Outlook.MailItem = DirectCast(item, Outlook.MailItem)
-                If mail.ConversationID IsNot Nothing Then
-                    mailThreadPane.UpdateMailList(mail.ConversationID, mail.EntryID)
-                End If
+                mailThreadPane.UpdateMailList(String.Empty, mail.EntryID)
             ElseIf TypeOf item Is Outlook.AppointmentItem Then
                 Dim appointment As Outlook.AppointmentItem = DirectCast(item, Outlook.AppointmentItem)
-                If appointment.GlobalAppointmentID IsNot Nothing Then
-                    mailThreadPane.UpdateMailList(appointment.GlobalAppointmentID, appointment.EntryID)
-                End If
+                mailThreadPane.UpdateMailList(String.Empty, appointment.EntryID)
             ElseIf TypeOf item Is Outlook.MeetingItem Then
                 Dim meeting As Outlook.MeetingItem = DirectCast(item, Outlook.MeetingItem)
                 mailThreadPane.UpdateMailList(String.Empty, meeting.EntryID)
@@ -185,24 +197,28 @@ Public Class ThisAddIn
             Dim mailEntryID As String = String.Empty
             Dim conversationID As String = String.Empty
 
-            If TypeOf item Is Outlook.MailItem Then
-                Dim mail As Outlook.MailItem = DirectCast(item, Outlook.MailItem)
-                mailEntryID = mail.EntryID
-                conversationID = mail.ConversationID
-            ElseIf TypeOf item Is Outlook.AppointmentItem Then
-                Dim appointment As Outlook.AppointmentItem = DirectCast(item, Outlook.AppointmentItem)
-                mailEntryID = appointment.EntryID
-                conversationID = appointment.GlobalAppointmentID
-            ElseIf TypeOf item Is Outlook.MeetingItem Then
-                Dim meeting As Outlook.MeetingItem = DirectCast(item, Outlook.MeetingItem)
-                mailEntryID = meeting.EntryID
-            ElseIf TypeOf item Is Outlook.TaskItem Then
-                Dim task As Outlook.TaskItem = DirectCast(item, Outlook.TaskItem)
-                mailEntryID = task.EntryID
-            ElseIf TypeOf item Is Outlook.ContactItem Then
-                Dim contact As Outlook.ContactItem = DirectCast(item, Outlook.ContactItem)
-                mailEntryID = contact.EntryID
-            End If
+            ' 避免直接在事件处理程序中使用项目的属性，仅获取ID
+            Try
+                If TypeOf item Is Outlook.MailItem Then
+                    Dim mail As Outlook.MailItem = DirectCast(item, Outlook.MailItem)
+                    mailEntryID = mail.EntryID
+                ElseIf TypeOf item Is Outlook.AppointmentItem Then
+                    Dim appointment As Outlook.AppointmentItem = DirectCast(item, Outlook.AppointmentItem)
+                    mailEntryID = appointment.EntryID
+                ElseIf TypeOf item Is Outlook.MeetingItem Then
+                    Dim meeting As Outlook.MeetingItem = DirectCast(item, Outlook.MeetingItem)
+                    mailEntryID = meeting.EntryID
+                ElseIf TypeOf item Is Outlook.TaskItem Then
+                    Dim task As Outlook.TaskItem = DirectCast(item, Outlook.TaskItem)
+                    mailEntryID = task.EntryID
+                ElseIf TypeOf item Is Outlook.ContactItem Then
+                    Dim contact As Outlook.ContactItem = DirectCast(item, Outlook.ContactItem)
+                    mailEntryID = contact.EntryID
+                End If
+            Catch comEx As System.Runtime.InteropServices.COMException
+                Debug.WriteLine($"COM异常：无法在当前事件处理程序中访问项目属性: {comEx.Message}")
+                Return
+            End Try
 
             ' 检查是否是同一封邮件的重复调用
             Dim currentTime = DateTime.Now
@@ -219,15 +235,27 @@ Public Class ThisAddIn
             ' 设置更新标志
             isUpdating = True
 
-            ' 调用更新方法
+            ' 延迟执行更新操作，让当前事件处理程序完成
             If Not String.IsNullOrEmpty(mailEntryID) Then
-                mailThreadPane.UpdateMailList(conversationID, mailEntryID)
+                Task.Run(Sub()
+                             Try
+                                 ' 在新线程中调用更新方法
+                                 mailThreadPane.UpdateMailList(conversationID, mailEntryID)
+                             Catch ex As Exception
+                                 Debug.WriteLine($"异步UpdateMailList调用错误: {ex.Message}")
+                             Finally
+                                 ' 线程安全地重置更新标志
+                                 SyncLock Me
+                                     isUpdating = False
+                                 End SyncLock
+                             End Try
+                         End Sub)
+            Else
+                isUpdating = False
             End If
 
         Catch ex As Exception
             Debug.WriteLine($"UpdateMailContent error: {ex.Message}")
-        Finally
-            ' 重置更新标志
             isUpdating = False
         End Try
     End Sub
@@ -236,7 +264,6 @@ Public Class ThisAddIn
         Try
             ' 检查Inspector是否包含MailItem
             Dim mailItem As Object = inspector.CurrentItem
-            If mailItem Is Nothing Then Return
 
             ' 为Inspector创建任务窗格
             Dim inspectorPane As New MailThreadPane()
@@ -244,64 +271,52 @@ Public Class ThisAddIn
             inspectorTaskPane.Width = 400
             inspectorTaskPane.Visible = True
 
-            ' 存储任务窗格引用
+            ' 为该Inspector生成唯一标识并存储其任务窗格
             Dim inspectorId As String = inspector.Caption & DateTime.Now.Ticks.ToString()
             inspectorTaskPanes(inspectorId) = inspectorTaskPane
 
-            ' 添加Inspector关闭事件处理
+            ' Add Inspector close event handler
             AddHandler CType(inspector, Outlook.InspectorEvents_Event).Close, Sub() InspectorClose(inspectorId)
-
-            ' 添加Inspector当前项变化事件处理
+            ' Add Inspector current item change event handler
             AddHandler CType(inspector, Outlook.InspectorEvents_Event).Activate, Sub() InspectorActivate(inspector, inspectorPane)
 
-            ' 更新邮件列表
-            UpdateInspectorMailContent(mailItem, inspectorPane)
+            ' 初始化时更新一次（若未处于抑制状态）
+            If Not inspectorPane.IsWebViewUpdateSuppressed Then
+                inspectorPane.BeginInvoke(Sub() UpdateInspectorMailContent(mailItem, inspectorPane))
+            End If
         Catch ex As Exception
-            Debug.WriteLine($"创建Inspector任务窗格出错: {ex.Message}")
+            Debug.WriteLine($"Error creating Inspector task pane: {ex.Message}")
         End Try
     End Sub
 
-    ' 处理Inspector激活事件
+    ' Handle Inspector activate event
     Private Sub InspectorActivate(inspector As Outlook.Inspector, inspectorPane As MailThreadPane)
         Try
             Dim mailItem As Object = inspector.CurrentItem
-            If mailItem IsNot Nothing Then
-                UpdateInspectorMailContent(mailItem, inspectorPane)
-            End If
+            ' 抑制期间不进行内容更新，避免 ContactInfoList 构造时触发 WebView 刷新
+            If inspectorPane Is Nothing OrElse inspectorPane.IsWebViewUpdateSuppressed Then Return
+            inspectorPane.BeginInvoke(Sub() UpdateInspectorMailContent(mailItem, inspectorPane))
         Catch ex As Exception
-            Debug.WriteLine($"Inspector激活事件处理出错: {ex.Message}")
+            Debug.WriteLine($"Error handling Inspector activate event: {ex.Message}")
         End Try
     End Sub
 
-    ' 处理Inspector关闭事件
-    Private Sub InspectorClose(inspectorId As String)
-        Try
-            If inspectorTaskPanes.ContainsKey(inspectorId) Then
-                Dim taskPane As Microsoft.Office.Tools.CustomTaskPane = inspectorTaskPanes(inspectorId)
-                If taskPane IsNot Nothing Then
-                    taskPane.Dispose()
-                End If
-                inspectorTaskPanes.Remove(inspectorId)
-            End If
-        Catch ex As Exception
-            Debug.WriteLine($"关闭Inspector任务窗格出错: {ex.Message}")
-        End Try
-    End Sub
-
-    ' 更新Inspector窗口中的邮件内容
+    ' Update mail content in Inspector window
     Private Sub UpdateInspectorMailContent(item As Object, inspectorPane As MailThreadPane)
         Try
+            ' 抑制期间跳过更新，避免联系人信息列表构造时刷新
+            If inspectorPane Is Nothing OrElse inspectorPane.IsWebViewUpdateSuppressed Then Return
+
             Dim mailEntryID As String = String.Empty
             Dim conversationID As String = String.Empty
 
+            ' 仅读取 EntryID，避免在事件回调后立即访问其他属性
             If TypeOf item Is Outlook.MailItem Then
                 Dim mail As Outlook.MailItem = DirectCast(item, Outlook.MailItem)
                 mailEntryID = mail.EntryID
-                conversationID = mail.ConversationID
             ElseIf TypeOf item Is Outlook.AppointmentItem Then
                 Dim appointment As Outlook.AppointmentItem = DirectCast(item, Outlook.AppointmentItem)
                 mailEntryID = appointment.EntryID
-                conversationID = appointment.GlobalAppointmentID
             ElseIf TypeOf item Is Outlook.MeetingItem Then
                 Dim meeting As Outlook.MeetingItem = DirectCast(item, Outlook.MeetingItem)
                 mailEntryID = meeting.EntryID
@@ -313,18 +328,18 @@ Public Class ThisAddIn
                 mailEntryID = contact.EntryID
             End If
 
-            ' 更新邮件列表
+            ' Update mail list
             If Not String.IsNullOrEmpty(mailEntryID) Then
                 inspectorPane.UpdateMailList(conversationID, mailEntryID)
             End If
         Catch ex As Exception
-            Debug.WriteLine($"更新Inspector邮件内容出错: {ex.Message}")
+            Debug.WriteLine($"Error updating Inspector mail content: {ex.Message}")
         End Try
     End Sub
-    ' 获取当前Outlook主题
+    ' Get current Outlook theme
     Private Sub GetCurrentOutlookTheme()
         Try
-            ' 尝试从注册表获取Outlook主题设置
+            ' Attempt to get Outlook theme settings from the registry
             Dim themeValue As Integer = -1
             Dim outlookVersion As String = Application.Version
             Dim registryPath As String = "Software\\Microsoft\\Office\" & outlookVersion.Substring(0, 2) & ".0\\Common"
@@ -338,39 +353,39 @@ Public Class ThisAddIn
                 End If
             End Using
 
-            ' 如果注册表中没有找到，使用默认值0（浅色/彩色主题）
+            ' If not found in registry, use default value 0 (light/colorful theme)
             If themeValue = -1 Then
                 themeValue = 0
             End If
 
-            ' 如果主题发生变化，更新UI
+            ' If theme changed, update UI
             If themeValue <> currentTheme Then
                 currentTheme = themeValue
                 ApplyThemeToControls()
             End If
 
-            Debug.WriteLine($"当前Outlook主题: {currentTheme}")
+            Debug.WriteLine($"Current Outlook theme: {currentTheme}")
         Catch ex As Exception
-            Debug.WriteLine($"获取Outlook主题出错: {ex.Message}")
+            Debug.WriteLine($"Error getting Outlook theme: {ex.Message}")
         End Try
     End Sub
 
-    ' 系统主题变化事件处理
+    ' System theme change event handler
     Private Sub SystemEvents_UserPreferenceChanged(sender As Object, e As UserPreferenceChangedEventArgs)
         If e.Category = UserPreferenceCategory.Color Then
             GetCurrentOutlookTheme()
         End If
     End Sub
 
-    ' 应用主题到控件
+    ' Apply theme to controls
     Private Sub ApplyThemeToControls()
         Try
-            ' 根据Outlook版本和主题值设置颜色
+            ' Set colors based on Outlook version and theme value
             Dim backgroundColor As Color
             Dim foregroundColor As Color
             Dim outlookVersion As String = Application.Version.Substring(0, 2)
 
-            ' Outlook 2016及以上版本
+            ' Outlook 2016 and above
             If Convert.ToInt32(outlookVersion) >= 16 Then
                 Select Case currentTheme
                     Case 0 ' Colorful
@@ -389,7 +404,7 @@ Public Class ThisAddIn
                         backgroundColor = SystemColors.Window
                         foregroundColor = SystemColors.WindowText
                 End Select
-            Else ' Outlook 2013及以下版本
+            Else ' Outlook 2013 and below
                 Select Case currentTheme
                     Case 0 ' White
                         backgroundColor = Color.White
@@ -406,12 +421,12 @@ Public Class ThisAddIn
                 End Select
             End If
 
-            ' 应用颜色到主任务窗格
+            ' Apply colors to main task pane
             If mailThreadPane IsNot Nothing Then
                 mailThreadPane.ApplyTheme(backgroundColor, foregroundColor)
             End If
 
-            ' 应用颜色到所有Inspector任务窗格
+            ' Apply colors to all Inspector task panes
             For Each taskPane In inspectorTaskPanes.Values
                 Dim inspectorPane As MailThreadPane = TryCast(taskPane.Control, MailThreadPane)
                 If inspectorPane IsNot Nothing Then
@@ -419,9 +434,21 @@ Public Class ThisAddIn
                 End If
             Next
 
-            Debug.WriteLine($"已应用主题颜色: 背景={backgroundColor}, 前景={foregroundColor}")
+            Debug.WriteLine($"Theme colors applied: Background={{backgroundColor}}, Foreground={{foregroundColor}}")
         Catch ex As Exception
-            Debug.WriteLine($"应用主题颜色出错: {ex.Message}")
+            Debug.WriteLine($"Error applying theme colors: {ex.Message}")
+        End Try
+    End Sub
+    ' Handle Inspector close event
+    Private Sub InspectorClose(inspectorId As String)
+        Try
+            If inspectorTaskPanes.ContainsKey(inspectorId) Then
+                Dim taskPane As Microsoft.Office.Tools.CustomTaskPane = inspectorTaskPanes(inspectorId)
+                taskPane?.Dispose()
+                inspectorTaskPanes.Remove(inspectorId)
+            End If
+        Catch ex As Exception
+            Debug.WriteLine($"Error closing Inspector task pane: {ex.Message}")
         End Try
     End Sub
 End Class

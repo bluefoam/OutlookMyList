@@ -79,49 +79,92 @@ Public Class MailHandler
 
     Public Shared Function DisplayMailContent(mailEntryID As String) As String
         Try
-            Dim mail As Object = Globals.ThisAddIn.Application.Session.GetItemFromID(mailEntryID)
+            Dim mail As Object = OutlookAddIn3.Utils.OutlookUtils.SafeGetItemFromID(mailEntryID)
 
             If TypeOf mail Is MailItem Then
                 Dim mailItem As MailItem = DirectCast(mail, MailItem)
-                Return $"<html><body style='font-family: Arial; padding: 10px; Font-size:12px;'>" &
-                       $"<h4 style='color: var(--theme-color, #0078d7);'>{If(String.IsNullOrEmpty(mailItem.Subject), "无主题", mailItem.Subject)}</h4>" &
-                       $"<div style='margin-bottom: 10px;Font-size:12px;'>" &
-                       $"<strong style='color: var(--theme-color, #0078d7);'>发件人:</strong> {If(String.IsNullOrEmpty(mailItem.SenderName), "未知", mailItem.SenderName)}<br/>" &
-                       $"<strong style='color: var(--theme-color, #0078d7);'>时间:</strong> {If(mailItem.ReceivedTime = DateTime.MinValue, "未知", mailItem.ReceivedTime.ToString("yyyy-MM-dd HH:mm:ss"))}" &
-                       $"</div>" &
-                       $"<div style='border-top: 1px solid var(--theme-color, #0078d7); padding-top: 10px;'>" &
-                       $"<style>.hidden-table {{display: none;}} img {{display: none;}}</style>" &
-                       $"{If(String.IsNullOrEmpty(mailItem.HTMLBody), "", ReplaceTableTag(mailItem.HTMLBody))}" &
-                       $"</div>" &
-                       "</body></html>"
+                Try
+                    Dim subject As String = If(String.IsNullOrEmpty(mailItem.Subject), "无主题", mailItem.Subject)
+                    Dim senderName As String = If(String.IsNullOrEmpty(mailItem.SenderName), "未知", mailItem.SenderName)
+                    Dim receivedTime As String = If(mailItem.ReceivedTime = DateTime.MinValue, "未知", mailItem.ReceivedTime.ToString("yyyy-MM-dd HH:mm:ss"))
+                    Dim htmlBody As String = If(String.IsNullOrEmpty(mailItem.HTMLBody), "", ReplaceTableTag(mailItem.HTMLBody))
+                    
+                    Return $"<html><body style='font-family: Arial; padding: 10px; Font-size:12px;'>" &
+                           $"<h4 style='color: var(--theme-color, #0078d7);'>{subject}</h4>" &
+                           $"<div style='margin-bottom: 10px;Font-size:12px;'>" &
+                           $"<strong style='color: var(--theme-color, #0078d7);'>发件人:</strong> {senderName}<br/>" &
+                           $"<strong style='color: var(--theme-color, #0078d7);'>时间:</strong> {receivedTime}" &
+                           $"</div>" &
+                           $"<div style='border-top: 1px solid var(--theme-color, #0078d7); padding-top: 10px;'>" &
+                           $"<style>.hidden-table {{display: none;}} img {{display: none;}}</style>" &
+                           $"{htmlBody}" &
+                           $"</div>" &
+                           "</body></html>"
+                Catch ex As System.Runtime.InteropServices.COMException
+                    Debug.WriteLine($"COM异常访问邮件属性 (HRESULT: {ex.HResult:X8}): {ex.Message}")
+                    Return "<html><body style='font-family: Arial; padding: 10px;'>无法访问邮件属性</body></html>"
+                Catch ex As System.Exception
+                    Debug.WriteLine($"访问邮件属性时发生异常: {ex.Message}")
+                    Return "<html><body style='font-family: Arial; padding: 10px;'>无法访问邮件属性</body></html>"
+                End Try
 
                        '"<div style='border-top: 1px solid #ccc; padding-top: 10px;'> <style> .hidden-table {display: none;} img {display: none;}</style>"
             ElseIf TypeOf mail Is AppointmentItem Then
                 Dim appointment As AppointmentItem = DirectCast(mail, AppointmentItem)
-                Return $"<html><body style='font-family: Arial; padding: 10px;Font-size:12px;'>" &
-                       $"<h4 style='color: var(--theme-color, #0078d7);'>{If(String.IsNullOrEmpty(appointment.Subject), "无主题", appointment.Subject)}</h4>" &
-                       $"<div style='margin-bottom: 10px;Font-size:12px;'>" &
-                       $"<strong style='color: var(--theme-color, #0078d7);'>组织者:</strong> {If(String.IsNullOrEmpty(appointment.Organizer), "未知", appointment.Organizer)}<br/>" &
-                       $"<strong style='color: var(--theme-color, #0078d7);'>开始时间:</strong> {If(appointment.Start = DateTime.MinValue, "未设置", appointment.Start.ToString("yyyy-MM-dd HH:mm:ss"))}<br/>" &
-                       $"<strong style='color: var(--theme-color, #0078d7);'>结束时间:</strong> {If(appointment.End = DateTime.MinValue, "未设置", appointment.End.ToString("yyyy-MM-dd HH:mm:ss"))}<br/>" &
-                       $"<strong style='color: var(--theme-color, #0078d7);'>地点:</strong> {If(String.IsNullOrEmpty(appointment.Location), "未设置", appointment.Location)}" &
-                       $"</div>" &
-                       $"<div style='border-top: 1px solid var(--theme-color, #0078d7); padding-top: 10px;Font-size:12px;'>" &
-                       $"{If(String.IsNullOrEmpty(appointment.Body), "", appointment.Body.Replace(vbCrLf, "<br>").Replace("<br><br>", "<br>"))}" &
-                       $"</div></body></html>"
+                Try
+                    Dim subject As String = If(String.IsNullOrEmpty(appointment.Subject), "无主题", appointment.Subject)
+                    Dim organizer As String = If(String.IsNullOrEmpty(appointment.Organizer), "未知", appointment.Organizer)
+                    Dim startTime As String = If(appointment.Start = DateTime.MinValue, "未设置", appointment.Start.ToString("yyyy-MM-dd HH:mm:ss"))
+                    Dim endTime As String = If(appointment.End = DateTime.MinValue, "未设置", appointment.End.ToString("yyyy-MM-dd HH:mm:ss"))
+                    Dim location As String = If(String.IsNullOrEmpty(appointment.Location), "未设置", appointment.Location)
+                    Dim body As String = If(String.IsNullOrEmpty(appointment.Body), "", appointment.Body.Replace(vbCrLf, "<br>").Replace("<br><br>", "<br>"))
+                    
+                    Return $"<html><body style='font-family: Arial; padding: 10px;Font-size:12px;'>" &
+                           $"<h4 style='color: var(--theme-color, #0078d7);'>{subject}</h4>" &
+                           $"<div style='margin-bottom: 10px;Font-size:12px;'>" &
+                           $"<strong style='color: var(--theme-color, #0078d7);'>组织者:</strong> {organizer}<br/>" &
+                           $"<strong style='color: var(--theme-color, #0078d7);'>开始时间:</strong> {startTime}<br/>" &
+                           $"<strong style='color: var(--theme-color, #0078d7);'>结束时间:</strong> {endTime}<br/>" &
+                           $"<strong style='color: var(--theme-color, #0078d7);'>地点:</strong> {location}" &
+                           $"</div>" &
+                           $"<div style='border-top: 1px solid var(--theme-color, #0078d7); padding-top: 10px;Font-size:12px;'>" &
+                           $"{body}" &
+                           $"</div></body></html>"
+                Catch ex As System.Runtime.InteropServices.COMException
+                    Debug.WriteLine($"COM异常访问会议属性 (HRESULT: {ex.HResult:X8}): {ex.Message}")
+                    Return "<html><body style='font-family: Arial; padding: 10px;'>无法访问会议属性</body></html>"
+                Catch ex As System.Exception
+                    Debug.WriteLine($"访问会议属性时发生异常: {ex.Message}")
+                    Return "<html><body style='font-family: Arial; padding: 10px;'>无法访问会议属性</body></html>"
+                End Try
             ElseIf TypeOf mail Is TaskItem Then
                 Dim task As TaskItem = DirectCast(mail, TaskItem)
-                Return $"<html><body style='font-family: Arial; padding: 10px;Font-size:12px;'>" &
-                       $"<h4 style='color: var(--theme-color, #0078d7);'>{If(String.IsNullOrEmpty(task.Subject), "无主题", task.Subject)}</h4>" &
-                       $"<div style='margin-bottom: 10px;Font-size:12px;'>" &
-                       $"<strong style='color: var(--theme-color, #0078d7);'>开始时间:</strong> {If(task.StartDate = DateTime.MinValue, "未设置", task.StartDate.ToString("yyyy-MM-dd HH:mm:ss"))}<br/>" &
-                       $"<strong style='color: var(--theme-color, #0078d7);'>结束时间:</strong> {If(task.DueDate = DateTime.MinValue, "未设置", task.DueDate.ToString("yyyy-MM-dd HH:mm:ss"))}<br/>" &
-                       $"<strong style='color: var(--theme-color, #0078d7);'>完成度:</strong> {task.PercentComplete}%<br/>" &
-                       $"<strong style='color: var(--theme-color, #0078d7);'>状态:</strong> {GetTaskStatus(task.Status)}" &
-                       $"</div>" &
-                        $"<div style='border-top: 1px solid var(--theme-color, #0078d7); padding-top: 10px;Font-size:12px;'>" &
-                       $"{If(String.IsNullOrEmpty(task.Body), "", task.Body.Replace(vbCrLf, "<br>").Replace("<br><br>", "<br>"))}" &
-                       $"</div></body></html>"
+                Try
+                    Dim subject As String = If(String.IsNullOrEmpty(task.Subject), "无主题", task.Subject)
+                    Dim startDate As String = If(task.StartDate = DateTime.MinValue, "未设置", task.StartDate.ToString("yyyy-MM-dd HH:mm:ss"))
+                    Dim dueDate As String = If(task.DueDate = DateTime.MinValue, "未设置", task.DueDate.ToString("yyyy-MM-dd HH:mm:ss"))
+                    Dim percentComplete As Integer = task.PercentComplete
+                    Dim status As String = GetTaskStatus(task.Status)
+                    Dim body As String = If(String.IsNullOrEmpty(task.Body), "", task.Body.Replace(vbCrLf, "<br>").Replace("<br><br>", "<br>"))
+                    
+                    Return $"<html><body style='font-family: Arial; padding: 10px;Font-size:12px;'>" &
+                           $"<h4 style='color: var(--theme-color, #0078d7);'>{subject}</h4>" &
+                           $"<div style='margin-bottom: 10px;Font-size:12px;'>" &
+                           $"<strong style='color: var(--theme-color, #0078d7);'>开始时间:</strong> {startDate}<br/>" &
+                           $"<strong style='color: var(--theme-color, #0078d7);'>结束时间:</strong> {dueDate}<br/>" &
+                           $"<strong style='color: var(--theme-color, #0078d7);'>完成度:</strong> {percentComplete}%<br/>" &
+                           $"<strong style='color: var(--theme-color, #0078d7);'>状态:</strong> {status}" &
+                           $"</div>" &
+                           $"<div style='border-top: 1px solid var(--theme-color, #0078d7); padding-top: 10px;Font-size:12px;'>" &
+                           $"{body}" &
+                           $"</div></body></html>"
+                Catch ex As System.Runtime.InteropServices.COMException
+                    Debug.WriteLine($"COM异常访问任务属性 (HRESULT: {ex.HResult:X8}): {ex.Message}")
+                    Return "<html><body style='font-family: Arial; padding: 10px;'>无法访问任务属性</body></html>"
+                Catch ex As System.Exception
+                    Debug.WriteLine($"访问任务属性时发生异常: {ex.Message}")
+                    Return "<html><body style='font-family: Arial; padding: 10px;'>无法访问任务属性</body></html>"
+                End Try
             ElseIf TypeOf mail Is MeetingItem Then
                 Dim meeting As MeetingItem = DirectCast(mail, MeetingItem)
 
@@ -145,24 +188,36 @@ Public Class MailHandler
                 End Select
 
 
-                Return $"<html><body style='font-family: Arial; padding: 10px;Font-size:12px;'>" &
-                       $"<h4>{If(String.IsNullOrEmpty(meeting.Subject), "无主题", meeting.Subject)}</h4>" &
-                       $"<div style='margin-bottom: 10px;Font-size:12px;'>" &
-                       $"<strong>状态:</strong> {meetingStatus}<br/>" &
-                       $"<strong>发件人:</strong> {If(String.IsNullOrEmpty(meeting.SenderName), "未知", meeting.SenderName)}<br/>" &
-                       $"<strong>开始时间:</strong> {If(associatedAppointment IsNot Nothing AndAlso associatedAppointment.Start <> DateTime.MinValue,
-                                                      associatedAppointment.Start.ToString("yyyy-MM-dd HH:mm:ss"),
-                                                      "未设置")}<br/>" &
-                       $"<strong>结束时间:</strong> {If(associatedAppointment IsNot Nothing AndAlso associatedAppointment.End <> DateTime.MinValue,
-                                                      associatedAppointment.End.ToString("yyyy-MM-dd HH:mm:ss"),
-                                                      "未设置")}<br/>" &
-                       $"<strong>地点:</strong> {If(associatedAppointment IsNot Nothing AndAlso Not String.IsNullOrEmpty(associatedAppointment.Location),
-                                                 associatedAppointment.Location,
-                                                 "未设置")}" &
-                       $"</div>" &
-                       $"<div style='border-top: 1px solid #ccc; padding-top: 10px;Font-size:12px;'>" &
-                       $"{If(String.IsNullOrEmpty(meeting.Body), "", meeting.Body.Replace(vbCrLf, "<br>").Replace(" <br><br>", "<br>"))}" &
-                       $"</div></body></html>"
+                Try
+                    Dim subject As String = If(String.IsNullOrEmpty(meeting.Subject), "无主题", meeting.Subject)
+                    Dim senderName As String = If(String.IsNullOrEmpty(meeting.SenderName), "未知", meeting.SenderName)
+                    Dim body As String = If(String.IsNullOrEmpty(meeting.Body), "", meeting.Body.Replace(vbCrLf, "<br>").Replace(" <br><br>", "<br>"))
+                    
+                    Return $"<html><body style='font-family: Arial; padding: 10px;Font-size:12px;'>" &
+                           $"<h4>{subject}</h4>" &
+                           $"<div style='margin-bottom: 10px;Font-size:12px;'>" &
+                           $"<strong>状态:</strong> {meetingStatus}<br/>" &
+                           $"<strong>发件人:</strong> {senderName}<br/>" &
+                           $"<strong>开始时间:</strong> {If(associatedAppointment IsNot Nothing AndAlso associatedAppointment.Start <> DateTime.MinValue,
+                                                          associatedAppointment.Start.ToString("yyyy-MM-dd HH:mm:ss"),
+                                                          "未设置")}<br/>" &
+                           $"<strong>结束时间:</strong> {If(associatedAppointment IsNot Nothing AndAlso associatedAppointment.End <> DateTime.MinValue,
+                                                          associatedAppointment.End.ToString("yyyy-MM-dd HH:mm:ss"),
+                                                          "未设置")}<br/>" &
+                           $"<strong>地点:</strong> {If(associatedAppointment IsNot Nothing AndAlso Not String.IsNullOrEmpty(associatedAppointment.Location),
+                                                     associatedAppointment.Location,
+                                                     "未设置")}" &
+                           $"</div>" &
+                           $"<div style='border-top: 1px solid #ccc; padding-top: 10px;Font-size:12px;'>" &
+                           $"{body}" &
+                           $"</div></body></html>"
+                Catch ex As System.Runtime.InteropServices.COMException
+                    Debug.WriteLine($"COM异常访问会议属性 (HRESULT: {ex.HResult:X8}): {ex.Message}")
+                    Return "<html><body style='font-family: Arial; padding: 10px;'>无法访问会议属性</body></html>"
+                Catch ex As System.Exception
+                    Debug.WriteLine($"访问会议属性时发生异常: {ex.Message}")
+                    Return "<html><body style='font-family: Arial; padding: 10px;'>无法访问会议属性</body></html>"
+                End Try
 
                 If 0 Then
                     Return $"<html><body style='font-family: Arial; padding: 10px;Font-size:12px;'>" &
