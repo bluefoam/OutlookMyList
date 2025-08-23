@@ -4,6 +4,7 @@ Imports System.Windows.Forms
 Imports System.Drawing
 Imports System.Threading.Tasks
 Imports Microsoft.Win32
+Imports OutlookAddIn3.Utils
 
 Public Class ThisAddIn
     Private WithEvents currentExplorer As Outlook.Explorer
@@ -11,9 +12,20 @@ Public Class ThisAddIn
     Private mailThreadPane As MailThreadPane
     Private taskMonitor As TaskMonitor
 
+    ' 公共属性用于访问MailThreadPane实例
+    Public ReadOnly Property MailThreadPaneInstance As MailThreadPane
+        Get
+            Return mailThreadPane
+        End Get
+    End Property
+
     ' 添加Inspector相关变量
     Private WithEvents inspectors As Outlook.Inspectors
     Private inspectorTaskPanes As New Dictionary(Of String, Microsoft.Office.Tools.CustomTaskPane)
+    
+    ' 添加Inspector防重复调用变量（以Inspector为粒度进行防重）
+    Private inspectorUpdateHistory As New Dictionary(Of String, DateTime)
+    Private Const InspectorUpdateThreshold As Integer = 1000 ' 毫秒，Inspector更新阈值更长
 
     ' 添加防重复调用变量
     Private lastUpdateTime As DateTime = DateTime.MinValue
@@ -57,6 +69,9 @@ Public Class ThisAddIn
         customTaskPane.Width = 400
         customTaskPane.Visible = True
 
+        ' 添加分页状态改变事件处理程序
+        AddHandler mailThreadPane.PaginationEnabledChanged, AddressOf MailThreadPane_PaginationEnabledChanged
+
         ' 初始化后，检查是否有当前选中的邮件并加载内容
         If currentExplorer IsNot Nothing AndAlso currentExplorer.Selection.Count > 0 Then
             Dim currentItem As Object = currentExplorer.Selection(1)
@@ -80,7 +95,7 @@ Public Class ThisAddIn
         End If
     End Sub
 
-    Public Async Sub ToggleTaskPane()
+    Public Sub ToggleTaskPane()
         If customTaskPane IsNot Nothing Then
             customTaskPane.Visible = Not customTaskPane.Visible
             ' 显示窗格时，获取当前选中项并更新内容
@@ -139,19 +154,12 @@ Public Class ThisAddIn
         End If
     End Sub
 
-    Private Sub Application_ItemLoad(item As Object) Handles Application.ItemLoad
-        Try
-            ' 检查任务窗格是否可见
-            If mailThreadPane IsNot Nothing AndAlso customTaskPane IsNot Nothing AndAlso customTaskPane.Visible Then
-                ' 使用 BeginInvoke 推迟处理，避免与 SelectionChange 事件冲突且不阻塞UI
-                If Not mailThreadPane.IsWebViewUpdateSuppressed Then
-                    mailThreadPane.BeginInvoke(Sub() UpdateMailContent(item))
-                End If
-            End If
-        Catch ex As Exception
-            Debug.WriteLine($"ItemLoad error: {ex.Message}")
-        End Try
-    End Sub
+    ' 注释掉 ItemLoad 事件处理，避免会话邮件加载过程中的大量 COM 异常
+    ' ItemLoad 事件在会话邮件批量加载时会被频繁触发，导致性能问题和异常日志
+    ' 我们已通过 SelectionChange 和 Inspector 事件充分覆盖了邮件选择和打开的场景
+    'Private Sub Application_ItemLoad(item As Object) Handles Application.ItemLoad
+    '    ' 已禁用：避免会话邮件加载过程中的 COM 异常和性能问题
+    'End Sub
 
     Private Sub UpdateMailContentOld(item As Object)
         Try
@@ -202,18 +210,23 @@ Public Class ThisAddIn
                 If TypeOf item Is Outlook.MailItem Then
                     Dim mail As Outlook.MailItem = DirectCast(item, Outlook.MailItem)
                     mailEntryID = mail.EntryID
+                    conversationID = mail.ConversationID
                 ElseIf TypeOf item Is Outlook.AppointmentItem Then
                     Dim appointment As Outlook.AppointmentItem = DirectCast(item, Outlook.AppointmentItem)
                     mailEntryID = appointment.EntryID
+                    conversationID = appointment.ConversationID
                 ElseIf TypeOf item Is Outlook.MeetingItem Then
                     Dim meeting As Outlook.MeetingItem = DirectCast(item, Outlook.MeetingItem)
                     mailEntryID = meeting.EntryID
+                    ' MeetingItem 没有 ConversationID 属性，保持为空
                 ElseIf TypeOf item Is Outlook.TaskItem Then
                     Dim task As Outlook.TaskItem = DirectCast(item, Outlook.TaskItem)
                     mailEntryID = task.EntryID
+                    ' TaskItem 没有 ConversationID 属性，保持为空
                 ElseIf TypeOf item Is Outlook.ContactItem Then
                     Dim contact As Outlook.ContactItem = DirectCast(item, Outlook.ContactItem)
                     mailEntryID = contact.EntryID
+                    ' ContactItem 没有 ConversationID 属性，保持为空
                 End If
             Catch comEx As System.Runtime.InteropServices.COMException
                 Debug.WriteLine($"COM异常：无法在当前事件处理程序中访问项目属性: {comEx.Message}")
@@ -272,17 +285,35 @@ Public Class ThisAddIn
             inspectorTaskPane.Visible = True
 
             ' 为该Inspector生成唯一标识并存储其任务窗格
-            Dim inspectorId As String = inspector.Caption & DateTime.Now.Ticks.ToString()
+            Dim inspectorId As String = inspector.Caption & "|" & inspector.GetHashCode().ToString()
             inspectorTaskPanes(inspectorId) = inspectorTaskPane
 
             ' Add Inspector close event handler
             AddHandler CType(inspector, Outlook.InspectorEvents_Event).Close, Sub() InspectorClose(inspectorId)
             ' Add Inspector current item change event handler
-            AddHandler CType(inspector, Outlook.InspectorEvents_Event).Activate, Sub() InspectorActivate(inspector, inspectorPane)
+            AddHandler CType(inspector, Outlook.InspectorEvents_Event).Activate, Sub() InspectorActivate(inspector, inspectorPane, inspectorId)
 
-            ' 初始化时更新一次（若未处于抑制状态）
+            ' 初始化时更新一次（若未处于抑制状态）。使用 BeginInvoke 保证不在事件过程内直接访问 EntryID。
             If Not inspectorPane.IsWebViewUpdateSuppressed Then
-                inspectorPane.BeginInvoke(Sub() UpdateInspectorMailContent(mailItem, inspectorPane))
+                ' 检查控件句柄是否已创建，避免 BeginInvoke 异常
+                If inspectorPane.IsHandleCreated Then
+                    inspectorPane.BeginInvoke(Sub()
+                                                 Try
+                                                     UpdateInspectorMailContent(mailItem, inspectorPane)
+                                                 Catch ex As System.Exception
+                                                     Debug.WriteLine($"Inspector 初始更新异常: {ex.Message}")
+                                                 End Try
+                                             End Sub)
+                Else
+                    ' 句柄未创建时，延迟到句柄创建后再执行
+                    AddHandler inspectorPane.HandleCreated, Sub()
+                                                                Try
+                                                                    UpdateInspectorMailContent(mailItem, inspectorPane)
+                                                                Catch ex As System.Exception
+                                                                    Debug.WriteLine($"Inspector 初始延迟更新异常: {ex.Message}")
+                                                                End Try
+                                                            End Sub
+                End If
             End If
         Catch ex As Exception
             Debug.WriteLine($"Error creating Inspector task pane: {ex.Message}")
@@ -290,12 +321,43 @@ Public Class ThisAddIn
     End Sub
 
     ' Handle Inspector activate event
-    Private Sub InspectorActivate(inspector As Outlook.Inspector, inspectorPane As MailThreadPane)
+    Private Sub InspectorActivate(inspector As Outlook.Inspector, inspectorPane As MailThreadPane, inspectorId As String)
         Try
             Dim mailItem As Object = inspector.CurrentItem
+
+            ' 根据 Inspector 粒度进行防抖：短时间内重复激活只更新一次
+            Dim now As DateTime = DateTime.Now
+            Dim lastTime As DateTime = DateTime.MinValue
+            If inspectorUpdateHistory.TryGetValue(inspectorId, lastTime) Then
+                If (now - lastTime).TotalMilliseconds < InspectorUpdateThreshold Then
+                    Debug.WriteLine($"InspectorActivate: 跳过重复更新（{(now - lastTime).TotalMilliseconds}ms 内） InspectorId={inspectorId}")
+                    Return
+                End If
+            End If
+            inspectorUpdateHistory(inspectorId) = now
+
             ' 抑制期间不进行内容更新，避免 ContactInfoList 构造时触发 WebView 刷新
             If inspectorPane Is Nothing OrElse inspectorPane.IsWebViewUpdateSuppressed Then Return
-            inspectorPane.BeginInvoke(Sub() UpdateInspectorMailContent(mailItem, inspectorPane))
+            
+            ' 检查控件句柄是否已创建，避免 BeginInvoke 异常
+            If inspectorPane.IsHandleCreated Then
+                inspectorPane.BeginInvoke(Sub()
+                                             Try
+                                                 UpdateInspectorMailContent(mailItem, inspectorPane)
+                                             Catch ex As System.Exception
+                                                 Debug.WriteLine($"Inspector Activate 更新异常: {ex.Message}")
+                                             End Try
+                                         End Sub)
+            Else
+                ' 句柄未创建时，延迟到句柄创建后再执行
+                AddHandler inspectorPane.HandleCreated, Sub()
+                                                            Try
+                                                                UpdateInspectorMailContent(mailItem, inspectorPane)
+                                                            Catch ex As System.Exception
+                                                                Debug.WriteLine($"Inspector 延迟更新异常: {ex.Message}")
+                                                            End Try
+                                                        End Sub
+            End If
         Catch ex As Exception
             Debug.WriteLine($"Error handling Inspector activate event: {ex.Message}")
         End Try
@@ -447,8 +509,25 @@ Public Class ThisAddIn
                 taskPane?.Dispose()
                 inspectorTaskPanes.Remove(inspectorId)
             End If
+            ' 清理Inspector防抖记录
+            If inspectorUpdateHistory.ContainsKey(inspectorId) Then
+                inspectorUpdateHistory.Remove(inspectorId)
+            End If
         Catch ex As Exception
             Debug.WriteLine($"Error closing Inspector task pane: {ex.Message}")
+        End Try
+    End Sub
+
+    ' 处理MailThreadPane分页状态改变事件
+    Private Sub MailThreadPane_PaginationEnabledChanged(enabled As Boolean)
+        Try
+            ' 更新Ribbon按钮状态
+            Dim ribbon As OutlookRibbon = TryCast(Me.Application.ActiveExplorer()?.CommandBars.GetRibbonX(), OutlookRibbon)
+            If ribbon IsNot Nothing Then
+                ribbon.UpdatePaginationButtonState(enabled)
+            End If
+        Catch ex As Exception
+            Debug.WriteLine($"Error updating pagination button state: {ex.Message}")
         End Try
     End Sub
 End Class

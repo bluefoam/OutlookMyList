@@ -7,5 +7,10 @@ Namespace OutlookAddIn3.Models
         Public Property Status As String
         Public Property PercentComplete As Integer
         Public Property LinkedMailSubject As String
+        Public Property RelatedMailSubject As String
+        ''' <summary>
+        ''' StoreID，用于提升 GetItemFromID 性能
+        ''' </summary>
+        Public Property StoreID As String
     End Class
 End Namespace

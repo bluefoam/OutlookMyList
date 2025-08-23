@@ -72,14 +72,39 @@ Namespace OutlookAddIn3.Handlers
         ' 修改 TaskInfo 的引用，使用完整命名空间
         Private Shared Sub AddTaskToList(taskList As ListView, task As TaskItem, linkedMailSubject As String)
             Try
+                Dim storeIdForTask As String = Nothing
+                Try
+                    Dim parentFolder = TryCast(task.Parent, MAPIFolder)
+                    If parentFolder IsNot Nothing AndAlso parentFolder.Store IsNot Nothing Then
+                        storeIdForTask = parentFolder.Store.StoreID
+                    End If
+                Catch
+                End Try
+
+                Dim mailLink As MailItem = Nothing
+                Dim mailStoreId As String = Nothing
+                Try
+                    If task.Links IsNot Nothing AndAlso task.Links.Count > 0 Then
+                        mailLink = TryCast(task.Links(1).Item, MailItem)
+                        If mailLink IsNot Nothing Then
+                            Dim parentFolder2 = TryCast(mailLink.Parent, MAPIFolder)
+                            If parentFolder2 IsNot Nothing AndAlso parentFolder2.Store IsNot Nothing Then
+                                mailStoreId = parentFolder2.Store.StoreID
+                            End If
+                        End If
+                    End If
+                Catch
+                End Try
+
                 Dim taskInfo As New OutlookAddIn3.Models.TaskInfo With {
                     .TaskEntryID = task.EntryID,
-                    .MailEntryID = If(task.Links.Count > 0, DirectCast(task.Links(1).Item, MailItem).EntryID, String.Empty),
+                    .MailEntryID = If(mailLink IsNot Nothing, mailLink.EntryID, String.Empty),
                     .Subject = task.Subject,
                     .DueDate = If(task.DueDate = #12:00:00 AM#, Nothing, task.DueDate),
                     .Status = task.Status.ToString(),
                     .PercentComplete = task.PercentComplete,
-                    .LinkedMailSubject = linkedMailSubject
+                    .LinkedMailSubject = linkedMailSubject,
+                    .StoreID = If(Not String.IsNullOrEmpty(mailStoreId), mailStoreId, storeIdForTask)
                 }
 
                 Dim listItem As New ListViewItem(task.Subject)
@@ -145,13 +170,23 @@ Namespace OutlookAddIn3.Handlers
                         Try
                             ' 直接使用 IsMarkedAsTask 属性判断
                             If mail.IsMarkedAsTask Then
-                                Dim taskInfo As New TaskInfo With {
+                                Dim storeId As String = Nothing
+                                Try
+                                    Dim parentFolder = TryCast(mail.Parent, MAPIFolder)
+                                    If parentFolder IsNot Nothing AndAlso parentFolder.Store IsNot Nothing Then
+                                        storeId = parentFolder.Store.StoreID
+                                    End If
+                                Catch
+                                End Try
+
+                                Dim taskInfo As New OutlookAddIn3.Models.TaskInfo With {
                                     .Subject = mail.TaskSubject,
                                     .MailEntryID = mail.EntryID,
                                     .RelatedMailSubject = mail.Subject,
                                     .DueDate = If(mail.TaskDueDate = DateTime.MinValue, Nothing, mail.TaskDueDate),
                                     .Status = GetTaskStatusText(mail.TaskStatus),
-                                    .PercentComplete = mail.PercentComplete
+                                    .PercentComplete = mail.PercentComplete,
+                                    .StoreID = storeId
                                 }
 
                                 Dim listItem As New ListViewItem(taskInfo.Subject)
@@ -188,8 +223,8 @@ Namespace OutlookAddIn3.Handlers
             End Try
         End Sub
 
-        Private Shared Function GetAnnotatedTasksFromMails(conversationId As String) As List(Of TaskInfo)
-            Dim tasks As New List(Of TaskInfo)
+        Private Shared Function GetAnnotatedTasksFromMails(conversationId As String) As List(Of OutlookAddIn3.Models.TaskInfo)
+            Dim tasks As New List(Of OutlookAddIn3.Models.TaskInfo)
             Try
                 ' 获取会话中的所有邮件
                 Dim outlookApp = Globals.ThisAddIn.Application
@@ -207,7 +242,7 @@ Namespace OutlookAddIn3.Handlers
 
                             ' 从邮件的任务属性中获取信息
                             If props("TaskSubject") IsNot Nothing Then
-                                tasks.Add(New TaskInfo With {
+                                tasks.Add(New OutlookAddIn3.Models.TaskInfo With {
                                     .Subject = props("TaskSubject").Value.ToString(),
                                     .MailEntryID = mail.EntryID,
                                     .RelatedMailSubject = mail.Subject,
@@ -263,8 +298,8 @@ Namespace OutlookAddIn3.Handlers
             End Try
         End Sub
 
-        Private Shared Function ParseTasksFromMail(mail As Outlook.MailItem) As List(Of TaskInfo)
-            Dim tasks As New List(Of TaskInfo)
+        Private Shared Function ParseTasksFromMail(mail As Outlook.MailItem) As List(Of OutlookAddIn3.Models.TaskInfo)
+            Dim tasks As New List(Of OutlookAddIn3.Models.TaskInfo)
             Try
                 ' 在这里实现你的邮件任务标记解析逻辑
                 ' 例如：查找特定格式的标记，如 [Task]、TODO: 等
@@ -275,7 +310,7 @@ Namespace OutlookAddIn3.Handlers
 
                     For Each line In lines
                         If line.Trim().StartsWith("[Task]") OrElse line.Trim().StartsWith("TODO:") Then
-                            tasks.Add(New TaskInfo With {
+                            tasks.Add(New OutlookAddIn3.Models.TaskInfo With {
                                 .Subject = line.Trim(),
                                 .MailEntryID = mail.EntryID,
                                 .RelatedMailSubject = mail.Subject
@@ -293,17 +328,6 @@ Namespace OutlookAddIn3.Handlers
             Return tasks
         End Function
 
-        ' 添加任务信息类
-        Public Class TaskInfo
-            Public Property Subject As String
-            Public Property DueDate As DateTime?
-            Public Property MailEntryID As String
-            Public Property RelatedMailSubject As String
-            Public Property TaskEntryID As String
-            Public Property Status As String
-            Public Property PercentComplete As Integer
-            Public Property LinkedMailSubject As String
-        End Class
         Public Shared Sub CreateNewTask(conversationId As String, mailEntryID As String)
             Try
                 Dim outlookApp As Outlook.Application = Globals.ThisAddIn.Application
@@ -330,9 +354,19 @@ Namespace OutlookAddIn3.Handlers
                 listItem.SubItems.Add(GetTaskStatusText(CInt(props("TaskStatus").Value)))
                 listItem.SubItems.Add($"{props("TaskComplete").Value}%")
                 listItem.SubItems.Add("(邮件标记任务)")
+                Dim storeId As String = Nothing
+                Try
+                    Dim parentFolder = TryCast(item.Parent, MAPIFolder)
+                    If parentFolder IsNot Nothing AndAlso parentFolder.Store IsNot Nothing Then
+                        storeId = parentFolder.Store.StoreID
+                    End If
+                Catch
+                End Try
+
                 listItem.Tag = New OutlookAddIn3.Models.TaskInfo With {
                     .TaskEntryID = item.EntryID,
-                    .MailEntryID = item.EntryID
+                    .MailEntryID = item.EntryID,
+                    .StoreID = storeId
                 }
                 taskList.Items.Add(listItem)
             Catch ex As System.Exception

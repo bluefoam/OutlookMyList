@@ -1,4 +1,4 @@
-﻿Partial Class OutlookRibbon
+Partial Class OutlookRibbon
     Inherits Microsoft.Office.Tools.Ribbon.RibbonBase
 
     <System.Diagnostics.DebuggerNonUserCode()>
@@ -34,6 +34,7 @@
         Me.Tab1 = Me.Factory.CreateRibbonTab
         Me.Group1 = Me.Factory.CreateRibbonGroup
         Me.ToggleButton1 = Me.Factory.CreateRibbonToggleButton
+        Me.ToggleButtonPagination = Me.Factory.CreateRibbonToggleButton
         Me.Tab1.SuspendLayout()
         Me.Group1.SuspendLayout()
         Me.SuspendLayout()
@@ -48,6 +49,7 @@
         'Group1
         '
         Me.Group1.Items.Add(Me.ToggleButton1)
+        Me.Group1.Items.Add(Me.ToggleButtonPagination)
         Me.Group1.Label = "视图"
         Me.Group1.Name = "Group1"
         '
@@ -56,6 +58,13 @@
         Me.ToggleButton1.Label = "ShowPane"
         Me.ToggleButton1.Name = "ToggleButton1"
         Me.ToggleButton1.ScreenTip = "切换邮件会话面板的显示状态"
+        '
+        'ToggleButtonPagination
+        '
+        Me.ToggleButtonPagination.Label = "分页"
+        Me.ToggleButtonPagination.Name = "ToggleButtonPagination"
+        Me.ToggleButtonPagination.ScreenTip = "切换邮件列表分页功能"
+        Me.ToggleButtonPagination.Checked = False
         '
         'OutlookRibbon
         '
@@ -73,6 +82,7 @@
     Friend WithEvents Tab1 As Microsoft.Office.Tools.Ribbon.RibbonTab
     Friend WithEvents Group1 As Microsoft.Office.Tools.Ribbon.RibbonGroup
     Friend WithEvents ToggleButton1 As Microsoft.Office.Tools.Ribbon.RibbonToggleButton
+    Friend WithEvents ToggleButtonPagination As Microsoft.Office.Tools.Ribbon.RibbonToggleButton
 End Class
 
 Partial Class ThisRibbonCollection

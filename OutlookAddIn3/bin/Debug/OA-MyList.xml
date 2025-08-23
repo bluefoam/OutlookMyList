@@ -42,11 +42,31 @@ OA-MyList
   Looks up a localized resource of type System.Drawing.Bitmap.
 </summary>
 </member>
+<member name="M:MailHandler.ConvertEntryIDToString(System.Object)">
+ <summary>
+ 将ListView项目的Tag转换为EntryID字符串
+ </summary>
+ <param name="tag">ListView项目的Tag对象</param>
+ <returns>EntryID字符串</returns>
+</member>
+<member name="P:OutlookAddIn3.Models.TaskInfo.StoreID">
+ <summary>
+ StoreID，用于提升 GetItemFromID 性能
+ </summary>
+</member>
 <member name="M:OutlookAddIn3.Utils.OutlookUtils.SafeGetItemFromID(System.String)">
  <summary>
  安全获取邮件项
  </summary>
  <param name="entryId">邮件项的EntryID</param>
+ <returns>邮件项对象，如果获取失败则返回Nothing</returns>
+</member>
+<member name="M:OutlookAddIn3.Utils.OutlookUtils.SafeGetItemFromID(System.String,System.String)">
+ <summary>
+ 安全获取邮件项（带StoreID优化）
+ </summary>
+ <param name="entryId">邮件项的EntryID</param>
+ <param name="storeId">可选的StoreID，提供时可显著提升性能</param>
  <returns>邮件项对象，如果获取失败则返回Nothing</returns>
 </member>
 <member name="M:OutlookAddIn3.Utils.OutlookUtils.SafeGetItemFromID``1(System.String)">
@@ -56,6 +76,30 @@ OA-MyList
  <typeparam name="T">期望的邮件项类型</typeparam>
  <param name="entryId">邮件项的EntryID</param>
  <returns>指定类型的邮件项，如果类型不匹配或获取失败则返回Nothing</returns>
+</member>
+<member name="M:OutlookAddIn3.Utils.OutlookUtils.SafeGetItemFromID``1(System.String,System.String)">
+ <summary>
+ 安全获取邮件项并验证类型（带StoreID优化）
+ </summary>
+ <typeparam name="T">期望的邮件项类型</typeparam>
+ <param name="entryId">邮件项的EntryID</param>
+ <param name="storeId">可选的StoreID，提供时可显著提升性能</param>
+ <returns>指定类型的邮件项，如果类型不匹配或获取失败则返回Nothing</returns>
+</member>
+<member name="M:OutlookAddIn3.Utils.OutlookUtils.FastOpenMailItem(System.String,System.String)">
+ <summary>
+ 快速打开邮件（针对 Flag 任务优化）
+ </summary>
+ <param name="entryId">邮件项的EntryID</param>
+ <param name="storeId">可选的StoreID，建议在 Flag 任务中提供以提升性能</param>
+ <returns>是否成功打开</returns>
+</member>
+<member name="M:OutlookAddIn3.Utils.OutlookUtils.GetShortEntryID(System.String)">
+ <summary>
+ 获取邮件项的短格式EntryID
+ </summary>
+ <param name="longEntryId">长格式EntryID</param>
+ <returns>短格式EntryID，如果获取失败则返回原始EntryID</returns>
 </member>
 <member name="M:OutlookAddIn3.Utils.OutlookUtils.SafeReleaseComObject(System.Object)">
  <summary>
@@ -68,6 +112,20 @@ OA-MyList
 </member>
 <member name="M:ThisRibbonCollection.#ctor(Microsoft.Office.Tools.Ribbon.RibbonFactory)">
 
+</member>
+<member name="M:MailThreadPane.ConvertEntryIDToString(System.Object)">
+ <summary>
+ 将ListView项目的Tag转换为EntryID字符串
+ </summary>
+ <param name="tag">ListView项目的Tag对象</param>
+ <returns>EntryID字符串</returns>
+</member>
+<member name="M:MailThreadPane.ConvertStringToHexFormat(System.String)">
+ <summary>
+ 将字符串EntryID转换为十六进制格式以便与字节数组格式进行比较
+ </summary>
+ <param name="entryId">字符串格式的EntryID</param>
+ <returns>十六进制格式的EntryID字符串</returns>
 </member>
 <member name="T:ThisAddIn">
 

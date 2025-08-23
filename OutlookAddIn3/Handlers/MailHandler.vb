@@ -3,6 +3,31 @@ Imports System.Diagnostics
 Imports System.Windows.Forms   ' 添加这行
 
 Public Class MailHandler
+    ''' <summary>
+    ''' 将ListView项目的Tag转换为EntryID字符串
+    ''' </summary>
+    ''' <param name="tag">ListView项目的Tag对象</param>
+    ''' <returns>EntryID字符串</returns>
+    Private Shared Function ConvertEntryIDToString(tag As Object) As String
+        Try
+            If tag Is Nothing Then
+                Return String.Empty
+            End If
+            
+            ' 如果Tag是字节数组（长格式EntryID的二进制数据）
+            If TypeOf tag Is Byte() Then
+                Dim bytes As Byte() = DirectCast(tag, Byte())
+                ' 将字节数组转换为十六进制字符串
+                Return BitConverter.ToString(bytes).Replace("-", "")
+            End If
+            
+            ' 如果Tag是字符串，直接返回
+            Return tag.ToString()
+        Catch ex As System.Exception
+            Debug.WriteLine($"ConvertEntryIDToString error: {ex.Message}")
+            Return String.Empty
+        End Try
+    End Function
     Public Shared Function GetPermanentEntryID(item As Object) As String
         Try
             If TypeOf item Is MailItem Then
@@ -20,7 +45,9 @@ Public Class MailHandler
         lvMails.BeginUpdate()
         Try
             For Each item As ListViewItem In lvMails.Items
-                If String.Equals(item.Tag.ToString().Trim(), currentMailEntryID.Trim(), StringComparison.OrdinalIgnoreCase) Then
+                Dim itemEntryID As String = ConvertEntryIDToString(item.Tag).Trim()
+                Dim currentEntryID As String = currentMailEntryID.Trim()
+                If String.Equals(itemEntryID, currentEntryID, StringComparison.OrdinalIgnoreCase) Then
                     item.BackColor = System.Drawing.Color.FromArgb(255, 255, 200)
                     item.Font = New System.Drawing.Font(lvMails.Font, System.Drawing.FontStyle.Bold)
                     item.Selected = True
