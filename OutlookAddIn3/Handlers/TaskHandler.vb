@@ -55,6 +55,99 @@ Namespace OutlookAddIn3.Handlers
             Return Nothing
         End Function
 
+        ''' <summary>
+        ''' 根据邮件EntryID获取关联的任务信息
+        ''' </summary>
+        ''' <param name="mailEntryID">邮件EntryID</param>
+        ''' <returns>关联的任务信息，如果没有关联任务则返回Nothing</returns>
+        Public Shared Function GetTaskByMailEntryID(mailEntryID As String) As OutlookAddIn3.Models.TaskInfo
+            Try
+                If String.IsNullOrEmpty(mailEntryID) Then
+                    Return Nothing
+                End If
+
+                ' 首先检查邮件是否被标记为任务
+                Dim mailItem As MailItem = GetMailItem(mailEntryID)
+                If mailItem IsNot Nothing Then
+                    Try
+                        If mailItem.IsMarkedAsTask Then
+                            ' 创建基于邮件标记的任务信息
+                            Dim taskInfo As New OutlookAddIn3.Models.TaskInfo With {
+                                .Subject = mailItem.TaskSubject,
+                                .MailEntryID = mailEntryID,
+                                .RelatedMailSubject = mailItem.Subject,
+                                .DueDate = mailItem.TaskDueDate,
+                                .Status = GetTaskStatusText(mailItem.TaskStatus),
+                                .PercentComplete = mailItem.TaskCompletedDate.CompareTo(DateTime.MinValue)
+                            }
+                            Return taskInfo
+                        End If
+                    Finally
+                        Runtime.InteropServices.Marshal.ReleaseComObject(mailItem)
+                    End Try
+                End If
+
+                ' 然后检查是否有独立的任务项关联到这个邮件
+                Dim outlookApp = Globals.ThisAddIn.Application
+                Dim tasksFolder = outlookApp.Session.GetDefaultFolder(OlDefaultFolders.olFolderTasks)
+                
+                For Each item As Object In tasksFolder.Items
+                    If TypeOf item Is TaskItem Then
+                        Dim task As TaskItem = DirectCast(item, TaskItem)
+                        Try
+                            ' 检查任务的链接项
+                            If task.Links IsNot Nothing AndAlso task.Links.Count > 0 Then
+                                For Each link As Link In task.Links
+                                    If TypeOf link.Item Is MailItem Then
+                                        Dim linkedMail As MailItem = DirectCast(link.Item, MailItem)
+                                        If linkedMail.EntryID = mailEntryID Then
+                                            ' 找到关联的任务
+                                            Dim taskInfo As New OutlookAddIn3.Models.TaskInfo With {
+                                                .TaskEntryID = task.EntryID,
+                                                .MailEntryID = mailEntryID,
+                                                .Subject = task.Subject,
+                                                .DueDate = task.DueDate,
+                                                .Status = GetTaskStatusText(task.Status),
+                                                .PercentComplete = task.PercentComplete,
+                                                .RelatedMailSubject = linkedMail.Subject
+                                            }
+                                            Runtime.InteropServices.Marshal.ReleaseComObject(linkedMail)
+                                            Runtime.InteropServices.Marshal.ReleaseComObject(task)
+                                            Return taskInfo
+                                        End If
+                                        Runtime.InteropServices.Marshal.ReleaseComObject(linkedMail)
+                                    End If
+                                Next
+                            End If
+                            
+                            ' 检查用户属性中的邮件ID关联
+                            For Each prop As UserProperty In task.UserProperties
+                                If prop.Name = "MailEntryID" AndAlso prop.Value?.ToString() = mailEntryID Then
+                                    Dim taskInfo As New OutlookAddIn3.Models.TaskInfo With {
+                                        .TaskEntryID = task.EntryID,
+                                        .MailEntryID = mailEntryID,
+                                        .Subject = task.Subject,
+                                        .DueDate = task.DueDate,
+                                        .Status = GetTaskStatusText(task.Status),
+                                        .PercentComplete = task.PercentComplete
+                                    }
+                                    Runtime.InteropServices.Marshal.ReleaseComObject(task)
+                                    Return taskInfo
+                                End If
+                            Next
+                        Finally
+                            Runtime.InteropServices.Marshal.ReleaseComObject(task)
+                        End Try
+                    End If
+                Next
+                
+            Catch ex As System.Exception
+                Debug.WriteLine($"GetTaskByMailEntryID error: {ex.Message}")
+            End Try
+            
+            Return Nothing
+        End Function
+
         Public Shared Sub SetupTaskList(taskList As ListView)
             taskList.View = Windows.Forms.View.Details
             taskList.FullRowSelect = True

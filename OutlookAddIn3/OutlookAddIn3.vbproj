@@ -257,6 +257,13 @@
     <Compile Include="MailThreadPane.vb">
       <SubType>UserControl</SubType>
     </Compile>
+    <Compile Include="BottomPane.vb">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="EmbeddedBottomPane.vb">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="Win32Helper.vb" />
     <Compile Include="TaskMonitor.vb" />
     <Compile Include="ThisAddIn.vb">
       <SubType>Code</SubType>

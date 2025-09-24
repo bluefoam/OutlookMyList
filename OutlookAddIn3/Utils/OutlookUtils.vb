@@ -157,6 +157,10 @@ Namespace OutlookAddIn3.Utils
                         DirectCast(mailItem, Outlook.AppointmentItem).Display(False)
                         System.Diagnostics.Debug.WriteLine("FastOpenMailItem: 会议项打开成功")
                         Return True
+                    ElseIf TypeOf mailItem Is Outlook.MeetingItem Then
+                        DirectCast(mailItem, Outlook.MeetingItem).Display(False)
+                        System.Diagnostics.Debug.WriteLine("FastOpenMailItem: 会议邮件打开成功")
+                        Return True
                     ElseIf TypeOf mailItem Is Outlook.TaskItem Then
                         DirectCast(mailItem, Outlook.TaskItem).Display(False)
                         System.Diagnostics.Debug.WriteLine("FastOpenMailItem: 任务项打开成功")

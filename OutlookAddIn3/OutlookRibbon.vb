@@ -31,4 +31,34 @@ Public Class OutlookRibbon
         End Try
     End Sub
 
+    Private Sub ToggleButtonBottomPane_Click(sender As Object, e As RibbonControlEventArgs) Handles ToggleButtonBottomPane.Click
+        Globals.ThisAddIn.ToggleBottomPane()
+        ' 更新按钮状态
+        ToggleButtonBottomPane.Checked = Globals.ThisAddIn.IsBottomPaneVisible
+    End Sub
+
+    Private Sub ButtonMinimizeBottomPane_Click(sender As Object, e As RibbonControlEventArgs) Handles ButtonMinimizeBottomPane.Click
+        Globals.ThisAddIn.MinimizeBottomPane()
+        ' 更新按钮文本
+        If Globals.ThisAddIn.BottomPaneInstance IsNot Nothing Then
+            ButtonMinimizeBottomPane.Label = If(Globals.ThisAddIn.BottomPaneInstance.IsMinimized, "还原", "最小化")
+        End If
+    End Sub
+
+    ' 更新底部面板按钮状态的公共方法
+    Public Sub UpdateBottomPaneButtonState(visible As Boolean, minimized As Boolean)
+        Try
+            ToggleButtonBottomPane.Checked = visible
+            ButtonMinimizeBottomPane.Label = If(minimized, "还原", "最小化")
+        Catch ex As Exception
+            Debug.WriteLine($"Error updating bottom pane button state: {ex.Message}")
+        End Try
+    End Sub
+
+    Private Sub ToggleButtonEmbeddedPane_Click(sender As Object, e As RibbonControlEventArgs) Handles ToggleButtonEmbeddedPane.Click
+        Globals.ThisAddIn.ToggleEmbeddedBottomPane()
+        ' 更新按钮状态
+        ToggleButtonEmbeddedPane.Checked = Globals.ThisAddIn.IsEmbeddedBottomPaneVisible
+    End Sub
+
 End Class

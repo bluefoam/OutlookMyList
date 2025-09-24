@@ -1,4 +1,4 @@
-﻿Imports System.Diagnostics
+Imports System.Diagnostics
 Imports System.Collections.Generic
 Imports System.Windows.Forms
 Imports System.Drawing
@@ -36,6 +36,14 @@ Public Class ThisAddIn
     ' 添加主题相关变量
     Private currentTheme As Integer = -1
 
+    ' 添加底部面板相关变量
+    Private bottomPane As BottomPane
+    Private bottomPaneTaskPane As Microsoft.Office.Tools.CustomTaskPane
+    
+    ' 添加嵌入式底部面板相关变量
+    Private embeddedBottomPane As EmbeddedBottomPane
+    Private embeddedPaneForm As Form
+
     Private Sub ThisAddIn_Startup() Handles Me.Startup
         ' 初始化Application对象已在Designer中完成
 
@@ -45,6 +53,8 @@ Public Class ThisAddIn
         ' 初始化Explorer窗口的任务窗格
         currentExplorer = Me.Application.ActiveExplorer
         InitializeMailPane()
+        InitializeBottomPane()
+        InitializeEmbeddedBottomPane()
 
         ' 初始化Inspectors集合并添加事件处理
         inspectors = Me.Application.Inspectors
@@ -87,7 +97,7 @@ Public Class ThisAddIn
 
         If currentExplorer.Selection.Count > 0 Then
             Dim selection As Object = currentExplorer.Selection(1)
-            ' 在抑制期间跳过更新，避免 ContactInfoList 构造时不断刷新 WebView
+            ' 在抑制期间跳过更新，避免 ContactInfoTree 构造时不断刷新 WebView
             If Not mailThreadPane.IsWebViewUpdateSuppressed Then
                 ' 推迟处理，避免在事件回调中访问项目属性
                 mailThreadPane.BeginInvoke(Sub() UpdateMailContent(selection))
@@ -120,6 +130,103 @@ Public Class ThisAddIn
         End If
     End Sub
 
+    Private Sub InitializeBottomPane()
+        Try
+            bottomPane = New BottomPane()
+            bottomPaneTaskPane = Me.CustomTaskPanes.Add(bottomPane, "插件面板")
+            ' 使用浮动模式，用户可以拖拽到主邮件区域下方
+            bottomPaneTaskPane.DockPosition = Microsoft.Office.Core.MsoCTPDockPosition.msoCTPDockPositionFloating
+            bottomPaneTaskPane.Height = 200
+            bottomPaneTaskPane.Width = 600
+            bottomPaneTaskPane.Visible = False ' 默认隐藏
+            
+            ' 尝试设置初始位置到屏幕中央偏下方
+            ' 注意：浮动面板的位置会由用户手动调整到合适位置
+        Catch ex As Exception
+            ' 记录错误但不影响主程序运行
+            Debug.WriteLine("初始化底部面板失败: " & ex.Message)
+        End Try
+    End Sub
+
+    Public Sub ToggleBottomPane()
+        If bottomPaneTaskPane IsNot Nothing Then
+            bottomPaneTaskPane.Visible = Not bottomPaneTaskPane.Visible
+        End If
+    End Sub
+
+    Private Sub InitializeEmbeddedBottomPane()
+        Try
+            embeddedBottomPane = New EmbeddedBottomPane()
+            
+            ' 创建一个窗体来承载嵌入式面板
+            embeddedPaneForm = New Form()
+            embeddedPaneForm.FormBorderStyle = FormBorderStyle.None
+            embeddedPaneForm.ShowInTaskbar = False
+            embeddedPaneForm.TopMost = False
+            embeddedPaneForm.Controls.Add(embeddedBottomPane)
+            embeddedBottomPane.Dock = DockStyle.Fill
+            
+            ' 初始时隐藏
+            embeddedPaneForm.Visible = False
+            
+        Catch ex As Exception
+            Debug.WriteLine("初始化嵌入式底部面板失败: " & ex.Message)
+        End Try
+    End Sub
+
+    Public Sub ToggleEmbeddedBottomPane()
+        Try
+            If embeddedBottomPane Is Nothing OrElse embeddedPaneForm Is Nothing Then
+                Return
+            End If
+
+            If embeddedPaneForm.Visible Then
+                ' 隐藏面板
+                embeddedPaneForm.Visible = False
+                embeddedBottomPane.UpdateStatus("已隐藏")
+            Else
+                ' 显示面板并尝试嵌入
+                If embeddedBottomPane.TryEmbedInOutlook() Then
+                    embeddedPaneForm.Visible = True
+                    embeddedBottomPane.UpdateStatus("已嵌入到Outlook阅读窗格下方")
+                Else
+                    ' 如果嵌入失败，显示为普通窗口
+                    embeddedPaneForm.WindowState = FormWindowState.Normal
+                    embeddedPaneForm.Size = New Size(600, 150)
+                    embeddedPaneForm.StartPosition = FormStartPosition.CenterScreen
+                    embeddedPaneForm.Visible = True
+                    embeddedBottomPane.UpdateStatus("嵌入失败，显示为独立窗口")
+                End If
+            End If
+        Catch ex As Exception
+            Debug.WriteLine("切换嵌入式底部面板失败: " & ex.Message)
+        End Try
+    End Sub
+
+    Public Sub MinimizeBottomPane()
+        If bottomPane IsNot Nothing Then
+            bottomPane.ToggleMinimize()
+        End If
+    End Sub
+
+    Public ReadOnly Property BottomPaneInstance As BottomPane
+        Get
+            Return bottomPane
+        End Get
+    End Property
+
+    Public ReadOnly Property IsBottomPaneVisible As Boolean
+        Get
+            Return bottomPaneTaskPane IsNot Nothing AndAlso bottomPaneTaskPane.Visible
+        End Get
+    End Property
+
+    Public ReadOnly Property IsEmbeddedBottomPaneVisible As Boolean
+        Get
+            Return embeddedPaneForm IsNot Nothing AndAlso embeddedPaneForm.Visible
+        End Get
+    End Property
+
     Private Sub ThisAddIn_Shutdown() Handles Me.Shutdown
         ' 注销事件处理程序
         If currentExplorer IsNot Nothing Then
@@ -151,6 +258,14 @@ Public Class ThisAddIn
         ' 释放资源
         If mailThreadPane IsNot Nothing Then
             mailThreadPane.Dispose()
+        End If
+        
+        ' 清理底部面板
+        If bottomPaneTaskPane IsNot Nothing Then
+            bottomPaneTaskPane.Dispose()
+        End If
+        If bottomPane IsNot Nothing Then
+            bottomPane.Dispose()
         End If
     End Sub
 
@@ -218,7 +333,7 @@ Public Class ThisAddIn
                 ElseIf TypeOf item Is Outlook.MeetingItem Then
                     Dim meeting As Outlook.MeetingItem = DirectCast(item, Outlook.MeetingItem)
                     mailEntryID = meeting.EntryID
-                    ' MeetingItem 没有 ConversationID 属性，保持为空
+                    conversationID = meeting.ConversationID
                 ElseIf TypeOf item Is Outlook.TaskItem Then
                     Dim task As Outlook.TaskItem = DirectCast(item, Outlook.TaskItem)
                     mailEntryID = task.EntryID
@@ -336,7 +451,7 @@ Public Class ThisAddIn
             End If
             inspectorUpdateHistory(inspectorId) = now
 
-            ' 抑制期间不进行内容更新，避免 ContactInfoList 构造时触发 WebView 刷新
+            ' 抑制期间不进行内容更新，避免 ContactInfoTree 构造时触发 WebView 刷新
             If inspectorPane Is Nothing OrElse inspectorPane.IsWebViewUpdateSuppressed Then Return
             
             ' 检查控件句柄是否已创建，避免 BeginInvoke 异常
