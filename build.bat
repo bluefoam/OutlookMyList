@@ -1,1 +1,1 @@
-"C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe" "c:\Users\nxa08267\source\repos\OutlookAddIn3\OutlookAddIn3.sln" /p:Configuration="Debug" /p:Platform="Any CPU"
+"C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe" "c:\Users\nxa08267\source\repos\OutlookAddIn3\OutlookMyList.sln" /p:Configuration="Debug" /p:Platform="Any CPU"

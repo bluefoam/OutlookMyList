@@ -86,7 +86,7 @@
 1. 安装 Visual Studio 2022 Community 或更高版本
 2. 安装 Office Developer Tools
 3. 克隆或下载项目源代码
-4. 打开 `OutlookAddIn3.sln` 解决方案文件
+4. 打开 `OutlookMyList.sln` 解决方案文件
 
 ### 构建项目
 ```bash
@@ -94,7 +94,7 @@
 build.bat
 
 # 或使用 MSBuild 命令
-"C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe" "OutlookAddIn3.sln" /p:Configuration="Debug" /p:Platform="Any CPU"
+"C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe" "OutlookMyList.sln" /p:Configuration="Debug" /p:Platform="Any CPU"
 ```
 
 ### 部署
