@@ -4,6 +4,7 @@ Imports System.Windows.Forms
 Imports System.Drawing
 Imports System.Threading.Tasks
 Imports Microsoft.Win32
+Imports System.Timers
 
 Public Class ThisAddIn
     Private WithEvents currentExplorer As Outlook.Explorer
@@ -34,6 +35,7 @@ Public Class ThisAddIn
 
     ' 添加主题相关变量
     Private currentTheme As Integer = -1
+    Private WithEvents themeMonitorTimer As System.Timers.Timer
 
     ' 添加底部面板相关变量
     Private bottomPane As BottomPane
@@ -70,6 +72,9 @@ Public Class ThisAddIn
 
         ' 添加主题变化监听
         AddHandler SystemEvents.UserPreferenceChanged, AddressOf SystemEvents_UserPreferenceChanged
+        
+        ' 初始化主题监听定时器
+        InitializeThemeMonitor()
     End Sub
 
     Private Sub InitializeMailPane()
@@ -240,6 +245,14 @@ Public Class ThisAddIn
 
         ' 移除主题变化监听
         RemoveHandler SystemEvents.UserPreferenceChanged, AddressOf SystemEvents_UserPreferenceChanged
+        
+        ' 清理主题监听定时器
+        If themeMonitorTimer IsNot Nothing Then
+            themeMonitorTimer.Stop()
+            themeMonitorTimer.Dispose()
+            themeMonitorTimer = Nothing
+            Debug.WriteLine("主题监听器已停止")
+        End If
 
         ' 清理所有Inspector任务窗格
         For Each taskPane In inspectorTaskPanes.Values
@@ -512,6 +525,32 @@ Public Class ThisAddIn
             Debug.WriteLine($"Error updating Inspector mail content: {ex.Message}")
         End Try
     End Sub
+
+    ' 初始化主题监听器
+    Private Sub InitializeThemeMonitor()
+        Try
+            ' 创建定时器，每2秒检查一次主题变化
+            themeMonitorTimer = New System.Timers.Timer(2000)
+            themeMonitorTimer.AutoReset = True
+            themeMonitorTimer.Enabled = True
+            Debug.WriteLine("主题监听器已启动")
+        Catch ex As Exception
+            Debug.WriteLine($"初始化主题监听器失败: {ex.Message}")
+        End Try
+    End Sub
+
+    ' 定时器事件处理程序
+    Private Sub ThemeMonitorTimer_Elapsed(sender As Object, e As ElapsedEventArgs) Handles themeMonitorTimer.Elapsed
+        Try
+            ' 在UI线程上执行主题检查
+            If mailThreadPane IsNot Nothing Then
+                mailThreadPane.BeginInvoke(Sub() GetCurrentOutlookTheme())
+            End If
+        Catch ex As Exception
+            Debug.WriteLine($"主题监听器检查失败: {ex.Message}")
+        End Try
+    End Sub
+
     ' Get current Outlook theme
     Private Sub GetCurrentOutlookTheme()
         Try

@@ -156,6 +156,18 @@ Public Class MailThreadPane
                 taskList.ForeColor = foregroundColor
             End If
 
+            ' 应用到邮件历史列表
+            If mailHistoryList IsNot Nothing Then
+                mailHistoryList.BackColor = backgroundColor
+                mailHistoryList.ForeColor = foregroundColor
+            End If
+
+            ' 应用到待办邮件列表
+            If pendingMailList IsNot Nothing Then
+                pendingMailList.BackColor = backgroundColor
+                pendingMailList.ForeColor = foregroundColor
+            End If
+
             ' 应用到分隔控件
             If splitter1 IsNot Nothing Then
                 splitter1.BackColor = backgroundColor
@@ -169,7 +181,23 @@ Public Class MailThreadPane
                 splitter2.Panel2.BackColor = backgroundColor
             End If
 
+            ' 应用到WebBrowser
+            If mailBrowser IsNot Nothing Then
+                ' 更新WebBrowser的CSS样式变量
+                UpdateWebBrowserTheme(backgroundColor, foregroundColor)
+            End If
 
+            ' 应用到TabControl
+            If tabControl IsNot Nothing Then
+                tabControl.BackColor = backgroundColor
+                tabControl.ForeColor = foregroundColor
+                
+                ' 应用到所有TabPage
+                For Each tabPage As TabPage In tabControl.TabPages
+                    tabPage.BackColor = backgroundColor
+                    tabPage.ForeColor = foregroundColor
+                Next
+            End If
 
             ' 应用到按钮面板
             If btnPanel IsNot Nothing Then
@@ -188,8 +216,75 @@ Public Class MailThreadPane
 
             ' 强制重绘
             Me.Invalidate(True)
+            Debug.WriteLine($"主题已应用: 背景色={backgroundColor}, 前景色={foregroundColor}")
         Catch ex As System.Exception
             Debug.WriteLine("ApplyTheme error: " & ex.Message)
+        End Try
+    End Sub
+
+    ' 更新WebBrowser的主题
+    Private Sub UpdateWebBrowserTheme(backgroundColor As Color, foregroundColor As Color)
+        Try
+            If mailBrowser IsNot Nothing AndAlso mailBrowser.IsHandleCreated Then
+                ' 构建CSS样式
+                Dim bgColorHex As String = $"#{backgroundColor.R:X2}{backgroundColor.G:X2}{backgroundColor.B:X2}"
+                Dim fgColorHex As String = $"#{foregroundColor.R:X2}{foregroundColor.G:X2}{foregroundColor.B:X2}"
+                
+                ' 创建主题样式的HTML
+                Dim themeStyle As String = $"
+                <style>
+                    :root {{
+                        --theme-bg-color: {bgColorHex};
+                        --theme-fg-color: {fgColorHex};
+                        --theme-color: #0078d7;
+                    }}
+                    body {{
+                        background-color: var(--theme-bg-color) !important;
+                        color: var(--theme-fg-color) !important;
+                        font-family: Segoe UI, Arial, sans-serif;
+                        margin: 0;
+                        padding: 10px;
+                    }}
+                    h4 {{
+                        color: var(--theme-color) !important;
+                        margin-top: 0;
+                    }}
+                    strong {{
+                        color: var(--theme-color) !important;
+                    }}
+                    div {{
+                        border-color: var(--theme-color) !important;
+                    }}
+                </style>"
+
+                ' 如果当前有内容，重新应用主题
+                If Not String.IsNullOrEmpty(mailBrowser.DocumentText) AndAlso 
+                   Not mailBrowser.DocumentText.Contains("请选择一封邮件") Then
+                    ' 获取当前内容并重新应用主题
+                    Dim currentContent As String = mailBrowser.DocumentText
+                    If currentContent.Contains("<style>") Then
+                        ' 替换现有样式
+                        Dim styleStart As Integer = currentContent.IndexOf("<style>")
+                        Dim styleEnd As Integer = currentContent.IndexOf("</style>") + 8
+                        If styleStart >= 0 AndAlso styleEnd > styleStart Then
+                            currentContent = currentContent.Remove(styleStart, styleEnd - styleStart)
+                        End If
+                    End If
+                    
+                    ' 插入新的主题样式
+                    If currentContent.Contains("<head>") Then
+                        currentContent = currentContent.Replace("<head>", "<head>" & themeStyle)
+                    ElseIf currentContent.Contains("<html>") Then
+                        currentContent = currentContent.Replace("<html>", "<html><head>" & themeStyle & "</head>")
+                    Else
+                        currentContent = "<html><head>" & themeStyle & "</head><body>" & currentContent & "</body></html>"
+                    End If
+                    
+                    mailBrowser.DocumentText = currentContent
+                End If
+            End If
+        Catch ex As System.Exception
+            Debug.WriteLine($"UpdateWebBrowserTheme error: {ex.Message}")
         End Try
     End Sub
 
