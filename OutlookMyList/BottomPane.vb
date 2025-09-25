@@ -122,10 +122,42 @@ Public Class BottomPane
             ' 更新标题栏颜色
             titleBar.BackColor = If(backgroundColor = SystemColors.Window, SystemColors.ActiveCaption, Color.FromArgb(backgroundColor.R - 20, backgroundColor.G - 20, backgroundColor.B - 20))
             titleLabel.ForeColor = foregroundColor
+            
+            ' 为最小化按钮应用主题颜色
             minimizeButton.BackColor = titleBar.BackColor
             minimizeButton.ForeColor = foregroundColor
+            minimizeButton.FlatStyle = FlatStyle.Flat
+            minimizeButton.FlatAppearance.BorderColor = foregroundColor
+            minimizeButton.FlatAppearance.BorderSize = 1
+            
+            ' 应用主题到内容面板中的所有控件
+            ApplyThemeToControls(contentPanel, backgroundColor, foregroundColor)
         Catch ex As Exception
             ' 忽略主题应用错误
         End Try
+    End Sub
+
+    Private Sub ApplyThemeToControls(parent As Control, backgroundColor As Color, foregroundColor As Color)
+        For Each ctrl As Control In parent.Controls
+            If TypeOf ctrl Is Button Then
+                ' 为按钮应用主题颜色
+                Dim btn As Button = DirectCast(ctrl, Button)
+                btn.BackColor = backgroundColor
+                btn.ForeColor = foregroundColor
+                btn.FlatStyle = FlatStyle.Flat
+                btn.FlatAppearance.BorderColor = foregroundColor
+                btn.FlatAppearance.BorderSize = 1
+            ElseIf TypeOf ctrl Is Label Then
+                ctrl.ForeColor = foregroundColor
+            Else
+                ctrl.BackColor = backgroundColor
+                ctrl.ForeColor = foregroundColor
+            End If
+            
+            ' 递归应用到子控件
+            If ctrl.HasChildren Then
+                ApplyThemeToControls(ctrl, backgroundColor, foregroundColor)
+            End If
+        Next
     End Sub
 End Class

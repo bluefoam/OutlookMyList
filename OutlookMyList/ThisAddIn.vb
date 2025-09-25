@@ -73,8 +73,8 @@ Public Class ThisAddIn
         ' 添加主题变化监听
         AddHandler SystemEvents.UserPreferenceChanged, AddressOf SystemEvents_UserPreferenceChanged
         
-        ' 初始化主题监听定时器
-        InitializeThemeMonitor()
+        ' 初始化主题监听定时器 (已禁用)
+        ' InitializeThemeMonitor()
     End Sub
 
     Private Sub InitializeMailPane()
@@ -82,6 +82,9 @@ Public Class ThisAddIn
         customTaskPane = Me.CustomTaskPanes.Add(mailThreadPane, "相关邮件v1.1")
         customTaskPane.Width = 400
         customTaskPane.Visible = True
+
+        ' 立即应用主题到新创建的MailThreadPane
+        ApplyThemeToControls()
 
         ' 添加分页状态改变事件处理程序
         AddHandler mailThreadPane.PaginationEnabledChanged, AddressOf MailThreadPane_PaginationEnabledChanged
@@ -557,32 +560,71 @@ Public Class ThisAddIn
             ' Attempt to get Outlook theme settings from the registry
             Dim themeValue As Integer = -1
             Dim outlookVersion As String = Application.Version
-            Dim registryPath As String = "Software\\Microsoft\\Office\" & outlookVersion.Substring(0, 2) & ".0\\Common"
-
-            Using key As RegistryKey = Registry.CurrentUser.OpenSubKey(registryPath)
-                If key IsNot Nothing Then
-                    Dim value As Object = key.GetValue("UI Theme")
-                    If value IsNot Nothing Then
-                        themeValue = Convert.ToInt32(value)
+            Dim majorVersion As String = outlookVersion.Substring(0, 2)
+            
+            ' 尝试多个可能的注册表路径
+            Dim registryPaths As String() = {
+                $"Software\\Microsoft\\Office\\{majorVersion}.0\\Common\\UI",
+                $"Software\\Microsoft\\Office\\{majorVersion}.0\\Common",
+                $"Software\\Microsoft\\Office\\{majorVersion}.0\\Outlook\\Options\\General"
+            }
+            
+            Debug.WriteLine($"Outlook版本: {outlookVersion}, 主版本: {majorVersion}")
+            
+            For Each registryPath As String In registryPaths
+                Debug.WriteLine($"尝试注册表路径: {registryPath}")
+                
+                Using key As RegistryKey = Registry.CurrentUser.OpenSubKey(registryPath)
+                    If key IsNot Nothing Then
+                        Debug.WriteLine($"成功打开注册表键: {registryPath}")
+                        
+                        ' 尝试多个可能的键名
+                        Dim keyNames As String() = {"UI Theme", "Theme", "UITheme"}
+                        
+                        For Each keyName As String In keyNames
+                            Dim value As Object = key.GetValue(keyName)
+                            If value IsNot Nothing Then
+                                themeValue = Convert.ToInt32(value)
+                                Debug.WriteLine($"找到主题值: {keyName} = {themeValue}")
+                                Exit For
+                            End If
+                        Next
+                        
+                        If themeValue <> -1 Then Exit For
+                    Else
+                        Debug.WriteLine($"无法打开注册表键: {registryPath}")
                     End If
-                End If
-            End Using
+                End Using
+            Next
 
             ' If not found in registry, use default value 0 (light/colorful theme)
             If themeValue = -1 Then
                 themeValue = 0
+                Debug.WriteLine("未找到主题设置，使用默认值 0")
             End If
 
             ' If theme changed, update UI
             If themeValue <> currentTheme Then
+                Debug.WriteLine($"主题变化: {currentTheme} -> {themeValue}")
                 currentTheme = themeValue
+                ApplyThemeToControls()
+            Else
+                ' 即使主题值没有变化，也要确保在启动时应用主题
+                Debug.WriteLine($"主题值未变化，但强制应用主题以确保正确初始化: {themeValue}")
                 ApplyThemeToControls()
             End If
 
-            Debug.WriteLine($"Current Outlook theme: {currentTheme}")
+            Debug.WriteLine($"当前Outlook主题: {currentTheme}")
         Catch ex As Exception
-            Debug.WriteLine($"Error getting Outlook theme: {ex.Message}")
+            Debug.WriteLine($"获取Outlook主题时出错: {ex.Message}")
         End Try
+    End Sub
+
+    ' 测试方法：手动触发主题检测
+    Public Sub TestThemeDetection()
+        Debug.WriteLine("=== 开始手动主题检测测试 ===")
+        GetCurrentOutlookTheme()
+        Debug.WriteLine("=== 主题检测测试完成 ===")
     End Sub
 
     ' System theme change event handler
@@ -606,6 +648,105 @@ Public Class ThisAddIn
                     Case 0 ' Colorful
                         backgroundColor = SystemColors.Window
                         foregroundColor = SystemColors.WindowText
+                        Debug.WriteLine("应用主题: Colorful (浅色)")
+                    Case 1 ' Dark Gray
+                        backgroundColor = Color.FromArgb(68, 68, 68)
+                        foregroundColor = Color.White
+                        Debug.WriteLine("应用主题: Dark Gray (深灰)")
+                    Case 2 ' Black
+                        backgroundColor = Color.FromArgb(32, 32, 32)
+                        foregroundColor = Color.White
+                        Debug.WriteLine("应用主题: Black (黑色)")
+                    Case 3 ' White
+                        backgroundColor = SystemColors.Window
+                        foregroundColor = SystemColors.WindowText
+                        Debug.WriteLine("应用主题: White (白色) - 使用系统颜色")
+                    Case 4 ' Dark Mode (新版本的黑色主题)
+                        backgroundColor = Color.FromArgb(32, 32, 32)
+                        foregroundColor = Color.White
+                        Debug.WriteLine("应用主题: Dark Mode (深色模式)")
+                    Case 5 ' System theme
+                        backgroundColor = SystemColors.Window
+                        foregroundColor = SystemColors.WindowText
+                        Debug.WriteLine("应用主题: System (系统主题)")
+                    Case Else
+                        backgroundColor = SystemColors.Window
+                        foregroundColor = SystemColors.WindowText
+                        Debug.WriteLine($"应用主题: 未知主题值 {currentTheme}，使用默认浅色")
+                End Select
+            Else ' Outlook 2013 and below
+                Select Case currentTheme
+                    Case 0 ' White
+                        backgroundColor = Color.White
+                        foregroundColor = Color.Black
+                    Case 1 ' Light Gray
+                        backgroundColor = Color.FromArgb(240, 240, 240)
+                        foregroundColor = Color.Black
+                    Case 2 ' Dark Gray
+                        backgroundColor = Color.FromArgb(68, 68, 68)
+                        foregroundColor = Color.White
+                    Case Else
+                        backgroundColor = SystemColors.Window
+                        foregroundColor = SystemColors.WindowText
+                End Select
+            End If
+
+            ' Apply colors to main task pane
+            If mailThreadPane IsNot Nothing Then
+                Debug.WriteLine($"[ApplyThemeToControls] 调用 mailThreadPane.ApplyTheme，背景色: {backgroundColor}, 前景色: {foregroundColor}")
+                Debug.WriteLine($"[ApplyThemeToControls] 调用前全局变量值: 背景={MailThreadPane.globalThemeBackgroundColor}, 前景={MailThreadPane.globalThemeForegroundColor}")
+                mailThreadPane.ApplyTheme(backgroundColor, foregroundColor)
+                Debug.WriteLine($"[ApplyThemeToControls] 调用后全局变量值: 背景={MailThreadPane.globalThemeBackgroundColor}, 前景={MailThreadPane.globalThemeForegroundColor}")
+            Else
+                Debug.WriteLine("[ApplyThemeToControls] 警告: mailThreadPane 为 Nothing")
+            End If
+
+            ' Apply colors to all Inspector task panes
+            For Each taskPane In inspectorTaskPanes.Values
+                Dim inspectorPane As MailThreadPane = TryCast(taskPane.Control, MailThreadPane)
+                If inspectorPane IsNot Nothing Then
+                    inspectorPane.ApplyTheme(backgroundColor, foregroundColor)
+                End If
+            Next
+
+            ' Apply colors to bottom pane
+            If bottomPane IsNot Nothing Then
+                bottomPane.ApplyTheme(backgroundColor, foregroundColor)
+            End If
+
+            ' Apply colors to embedded bottom pane
+            If embeddedBottomPane IsNot Nothing Then
+                embeddedBottomPane.ApplyTheme(backgroundColor, foregroundColor)
+            End If
+
+            Debug.WriteLine($"Theme colors applied: Background={{backgroundColor}}, Foreground={{foregroundColor}}")
+        Catch ex As Exception
+            Debug.WriteLine($"Error applying theme colors: {ex.Message}")
+        End Try
+    End Sub
+
+    ' 公共方法：获取当前主题颜色
+    ' 公共方法：强制刷新主题
+    Public Sub RefreshTheme()
+        Try
+            GetCurrentOutlookTheme()
+        Catch ex As Exception
+            Debug.WriteLine($"RefreshTheme error: {ex.Message}")
+        End Try
+    End Sub
+
+    Public Function GetCurrentThemeColors() As (backgroundColor As Color, foregroundColor As Color)
+        Try
+            Dim backgroundColor As Color
+            Dim foregroundColor As Color
+            Dim outlookVersion As String = Application.Version.Substring(0, 2)
+
+            ' Outlook 2016 and above
+            If Convert.ToInt32(outlookVersion) >= 16 Then
+                Select Case currentTheme
+                    Case 0 ' Colorful
+                        backgroundColor = SystemColors.Window
+                        foregroundColor = SystemColors.WindowText
                     Case 1 ' Dark Gray
                         backgroundColor = Color.FromArgb(68, 68, 68)
                         foregroundColor = Color.White
@@ -613,8 +754,14 @@ Public Class ThisAddIn
                         backgroundColor = Color.FromArgb(32, 32, 32)
                         foregroundColor = Color.White
                     Case 3 ' White
-                        backgroundColor = Color.White
-                        foregroundColor = Color.Black
+                        backgroundColor = SystemColors.Window
+                        foregroundColor = SystemColors.WindowText
+                    Case 4 ' Dark Mode
+                        backgroundColor = Color.FromArgb(32, 32, 32)
+                        foregroundColor = Color.White
+                    Case 5 ' System theme
+                        backgroundColor = SystemColors.Window
+                        foregroundColor = SystemColors.WindowText
                     Case Else
                         backgroundColor = SystemColors.Window
                         foregroundColor = SystemColors.WindowText
@@ -636,24 +783,13 @@ Public Class ThisAddIn
                 End Select
             End If
 
-            ' Apply colors to main task pane
-            If mailThreadPane IsNot Nothing Then
-                mailThreadPane.ApplyTheme(backgroundColor, foregroundColor)
-            End If
-
-            ' Apply colors to all Inspector task panes
-            For Each taskPane In inspectorTaskPanes.Values
-                Dim inspectorPane As MailThreadPane = TryCast(taskPane.Control, MailThreadPane)
-                If inspectorPane IsNot Nothing Then
-                    inspectorPane.ApplyTheme(backgroundColor, foregroundColor)
-                End If
-            Next
-
-            Debug.WriteLine($"Theme colors applied: Background={{backgroundColor}}, Foreground={{foregroundColor}}")
+            Debug.WriteLine($"ThisAddIn.GetCurrentThemeColors: 主题={currentTheme}, 背景={backgroundColor}, 前景={foregroundColor}")
+            Return (backgroundColor, foregroundColor)
         Catch ex As Exception
-            Debug.WriteLine($"Error applying theme colors: {ex.Message}")
+            Debug.WriteLine($"获取主题颜色失败: {ex.Message}")
+            Return (SystemColors.Window, SystemColors.WindowText)
         End Try
-    End Sub
+    End Function
     ' Handle Inspector close event
     Private Sub InspectorClose(inspectorId As String)
         Try

@@ -213,4 +213,49 @@ Public Class EmbeddedBottomPane
         End If
         MyBase.Dispose(disposing)
     End Sub
+
+    ' 应用主题
+    Public Sub ApplyTheme(backgroundColor As Color, foregroundColor As Color)
+        Try
+            Me.BackColor = backgroundColor
+            contentPanel.BackColor = backgroundColor
+            
+            ' 更新标题栏颜色
+            titleLabel.BackColor = If(backgroundColor = SystemColors.Window, Color.LightGray, Color.FromArgb(backgroundColor.R - 20, backgroundColor.G - 20, backgroundColor.B - 20))
+            titleLabel.ForeColor = foregroundColor
+            
+            ' 更新状态栏颜色
+            statusLabel.BackColor = titleLabel.BackColor
+            statusLabel.ForeColor = foregroundColor
+            
+            ' 应用主题到所有控件
+            ApplyThemeToControls(contentPanel, backgroundColor, foregroundColor)
+        Catch ex As Exception
+            ' 忽略主题应用错误
+        End Try
+    End Sub
+
+    Private Sub ApplyThemeToControls(parent As Control, backgroundColor As Color, foregroundColor As Color)
+        For Each ctrl As Control In parent.Controls
+            If TypeOf ctrl Is Button Then
+                ' 为按钮应用主题颜色
+                Dim btn As Button = DirectCast(ctrl, Button)
+                btn.BackColor = backgroundColor
+                btn.ForeColor = foregroundColor
+                btn.FlatStyle = FlatStyle.Flat
+                btn.FlatAppearance.BorderColor = foregroundColor
+                btn.FlatAppearance.BorderSize = 1
+            ElseIf TypeOf ctrl Is Label Then
+                ctrl.ForeColor = foregroundColor
+            Else
+                ctrl.BackColor = backgroundColor
+                ctrl.ForeColor = foregroundColor
+            End If
+            
+            ' 递归应用到子控件
+            If ctrl.HasChildren Then
+                ApplyThemeToControls(ctrl, backgroundColor, foregroundColor)
+            End If
+        Next
+    End Sub
 End Class

@@ -1,9 +1,22 @@
 Imports Microsoft.Office.Interop.Outlook
 Imports System.Diagnostics
 Imports System.Windows.Forms
+Imports System.Drawing
 
 Namespace OutlookMyList.Handlers
     Public Class TaskHandler
+        ''' <summary>
+        ''' 应用主题到ListView项目
+        ''' </summary>
+        ''' <param name="item">要应用主题的ListView项目</param>
+        ''' <param name="backgroundColor">背景色</param>
+        ''' <param name="foregroundColor">前景色</param>
+        Private Shared Sub ApplyThemeToListViewItem(item As ListViewItem, backgroundColor As Color, foregroundColor As Color)
+            If item IsNot Nothing Then
+                item.BackColor = backgroundColor
+                item.ForeColor = foregroundColor
+            End If
+        End Sub
         Public Shared Function GetTaskStatusText(status As OlTaskStatus) As String
             Select Case status
                 Case OlTaskStatus.olTaskNotStarted
@@ -205,6 +218,11 @@ Namespace OutlookMyList.Handlers
                 listItem.SubItems.Add($"{task.PercentComplete}%")
                 listItem.SubItems.Add("(标准任务)")
                 listItem.Tag = taskInfo
+                
+                ' 应用默认主题
+                ApplyThemeToListViewItem(listItem, SystemColors.Window, SystemColors.WindowText)
+                
+                taskList.Items.Add(listItem)
             Catch ex As System.Runtime.InteropServices.COMException
                 Debug.WriteLine($"COM异常访问任务属性 (HRESULT: {ex.HResult:X8}): {ex.Message}")
                 Dim listItem As New ListViewItem("无法访问任务")
@@ -213,6 +231,10 @@ Namespace OutlookMyList.Handlers
                 listItem.SubItems.Add("无法访问")
                 listItem.SubItems.Add("(标准任务)")
                 listItem.Tag = Nothing
+                
+                ' 应用默认主题
+                ApplyThemeToListViewItem(listItem, SystemColors.Window, SystemColors.WindowText)
+                
                 taskList.Items.Add(listItem)
             Catch ex As System.Exception
                 Debug.WriteLine($"添加任务到列表时出错: {ex.Message}")
@@ -287,6 +309,10 @@ Namespace OutlookMyList.Handlers
                                 listItem.SubItems.Add($"{taskInfo.PercentComplete}%")
                                 listItem.SubItems.Add(taskInfo.RelatedMailSubject)
                                 listItem.Tag = taskInfo
+                                
+                                ' 应用默认主题
+                                ApplyThemeToListViewItem(listItem, SystemColors.Window, SystemColors.WindowText)
+                                
                                 taskList.Items.Add(listItem)
                             End If
                         Catch ex As System.Runtime.InteropServices.COMException
@@ -297,6 +323,10 @@ Namespace OutlookMyList.Handlers
                             listItem.SubItems.Add("无法访问")
                             listItem.SubItems.Add("无法访问")
                             listItem.Tag = Nothing
+                            
+                            ' 应用默认主题
+                            ApplyThemeToListViewItem(listItem, SystemColors.Window, SystemColors.WindowText)
+                            
                             taskList.Items.Add(listItem)
                         Catch ex As System.Exception
                             Debug.WriteLine($"访问邮件任务属性时发生异常: {ex.Message}")
@@ -306,6 +336,10 @@ Namespace OutlookMyList.Handlers
                             listItem.SubItems.Add("无法访问")
                             listItem.SubItems.Add("无法访问")
                             listItem.Tag = Nothing
+                            
+                            ' 应用默认主题
+                            ApplyThemeToListViewItem(listItem, SystemColors.Window, SystemColors.WindowText)
+                            
                             taskList.Items.Add(listItem)
                         End Try
                     End If
@@ -460,6 +494,10 @@ Namespace OutlookMyList.Handlers
                     .MailEntryID = item.EntryID,
                     .StoreID = storeId
                 }
+                
+                ' 应用默认主题
+                ApplyThemeToListViewItem(listItem, SystemColors.Window, SystemColors.WindowText)
+                
                 taskList.Items.Add(listItem)
             Catch ex As System.Exception
                 Debug.WriteLine($"添加邮件标记任务到列表时出错: {ex.Message}")

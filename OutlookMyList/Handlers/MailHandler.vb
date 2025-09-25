@@ -1,5 +1,6 @@
 Imports Microsoft.Office.Interop.Outlook
 Imports System.Diagnostics
+Imports System.Drawing
 Imports System.Windows.Forms   ' 添加这行
 
 Namespace OutlookMyList.Handlers
@@ -42,7 +43,9 @@ Namespace OutlookMyList.Handlers
         Return String.Empty
     End Function
 
-    Public Shared Sub UpdateHighlight(lvMails As ListView, currentMailEntryID As String)
+    Public Shared Sub UpdateHighlight(lvMails As ListView, currentMailEntryID As String, Optional backgroundColor As Color = Nothing)
+        If backgroundColor = Nothing Then backgroundColor = SystemColors.Window
+        
         lvMails.BeginUpdate()
         Try
             For Each item As ListViewItem In lvMails.Items
@@ -54,7 +57,7 @@ Namespace OutlookMyList.Handlers
                     item.Selected = True
                     item.EnsureVisible()
                 Else
-                    item.BackColor = System.Drawing.SystemColors.Window
+                    item.BackColor = backgroundColor  ' 使用传入的背景色
                     item.Font = lvMails.Font
                     item.Selected = False
                 End If
@@ -106,39 +109,145 @@ Namespace OutlookMyList.Handlers
     End Function
 
     Public Shared Function DisplayMailContent(mailEntryID As String) As String
+        Debug.WriteLine($"[DisplayMailContent] 开始处理邮件，EntryID: {mailEntryID}")
         Try
             Dim mail As Object = OutlookMyList.Utils.OutlookUtils.SafeGetItemFromID(mailEntryID)
+            If mail Is Nothing Then
+                Debug.WriteLine("[DisplayMailContent] 无法获取邮件对象")
+                Return "<html><body><p>无法获取邮件</p></body></html>"
+            End If
+            Debug.WriteLine($"[DisplayMailContent] 成功获取邮件对象，类型: {mail.GetType().Name}")
 
             If TypeOf mail Is MailItem Then
                 Dim mailItem As MailItem = DirectCast(mail, MailItem)
+                
+                ' 使用全局主题变量
+                Dim bgColor As String = MailThreadPane.globalThemeBackgroundColor
+                Dim fgColor As String = MailThreadPane.globalThemeForegroundColor
+                Dim accentColor As String = MailThreadPane.globalThemeAccentColor
+                
+                ' 检查是否为默认的白色主题，如果是则强制刷新主题
+                If bgColor = "#ffffff" AndAlso fgColor = "#000000" AndAlso MailThreadPane.globalThemeLastUpdate = DateTime.MinValue Then
+                    Debug.WriteLine("[DisplayMailContent] 检测到默认主题，强制刷新主题设置")
+                    Try
+                        ' 强制刷新主题
+                         Globals.ThisAddIn.RefreshTheme()
+                        ' 重新获取主题变量
+                        bgColor = MailThreadPane.globalThemeBackgroundColor
+                        fgColor = MailThreadPane.globalThemeForegroundColor
+                        accentColor = MailThreadPane.globalThemeAccentColor
+                        Debug.WriteLine($"[DisplayMailContent] 主题刷新后: 背景={bgColor}, 前景={fgColor}")
+                    Catch ex As System.Exception
+                        Debug.WriteLine($"[DisplayMailContent] 主题刷新失败: {ex.Message}")
+                    End Try
+                End If
+                
+                ' 添加调试信息
+                Debug.WriteLine($"[DisplayMailContent] 全局主题变量值:")
+                Debug.WriteLine($"  背景色: {bgColor}")
+                Debug.WriteLine($"  前景色: {fgColor}")
+                Debug.WriteLine($"  强调色: {accentColor}")
+                Debug.WriteLine($"  最后更新时间: {MailThreadPane.globalThemeLastUpdate}")
+                
                 Try
                     Dim subject As String = If(String.IsNullOrEmpty(mailItem.Subject), "无主题", mailItem.Subject)
                     Dim senderName As String = If(String.IsNullOrEmpty(mailItem.SenderName), "未知", mailItem.SenderName)
                     Dim receivedTime As String = If(mailItem.ReceivedTime = DateTime.MinValue, "未知", mailItem.ReceivedTime.ToString("yyyy-MM-dd HH:mm:ss"))
                     Dim htmlBody As String = If(String.IsNullOrEmpty(mailItem.HTMLBody), "", ReplaceTableTag(mailItem.HTMLBody))
                     
-                    Return $"<html><body style='font-family: Arial; padding: 10px; Font-size:12px;'>" &
-                           $"<h4 style='color: var(--theme-color, #0078d7);'>{subject}</h4>" &
-                           $"<div style='margin-bottom: 10px;Font-size:12px;'>" &
-                           $"<strong style='color: var(--theme-color, #0078d7);'>发件人:</strong> {senderName}<br/>" &
-                           $"<strong style='color: var(--theme-color, #0078d7);'>时间:</strong> {receivedTime}" &
+                    Dim htmlContent As String = $"<html><head><style>
+                        /* 强制覆盖所有元素的背景和文字颜色 */
+                        * {{
+                            background-color: {bgColor} !important;
+                            color: {fgColor} !important;
+                        }}
+                        body {{
+                            background-color: {bgColor} !important;
+                            color: {fgColor} !important;
+                            font-family: Arial, sans-serif;
+                            padding: 10px;
+                            font-size: 12px;
+                            margin: 0;
+                        }}
+                        /* 覆盖所有可能的文本元素 */
+                        p, div, span, td, th, li, ul, ol, a, em, i, b, strong, h1, h2, h3, h4, h5, h6 {{
+                            color: {fgColor} !important;
+                            background-color: transparent !important;
+                        }}
+                        /* 标题和强调文本使用强调色 */
+                        h1, h2, h3, h4, h5, h6 {{
+                            color: {accentColor} !important;
+                            margin-top: 0;
+                        }}
+                        strong, b {{
+                            color: {accentColor} !important;
+                        }}
+                        /* 链接颜色 */
+                        a, a:visited, a:hover, a:active {{
+                            color: {accentColor} !important;
+                        }}
+                        /* 边框颜色 */
+                        div, table, td, th {{
+                            border-color: {accentColor} !important;
+                        }}
+                        /* 隐藏不需要的元素 */
+                        .hidden-table {{
+                            display: none;
+                        }}
+                        img {{
+                            display: none;
+                        }}
+                        /* 文本选择样式 - 提供良好的对比度 */
+                        ::selection {{
+                            background-color: {fgColor} !important;
+                            color: {bgColor} !important;
+                        }}
+                        ::-moz-selection {{
+                            background-color: {fgColor} !important;
+                            color: {bgColor} !important;
+                        }}
+                        /* 覆盖表格样式 */
+                        table, tbody, thead, tfoot, tr, td, th {{
+                            background-color: transparent !important;
+                            color: {fgColor} !important;
+                        }}
+                        /* 覆盖列表样式 */
+                        ul, ol, li {{
+                            color: {fgColor} !important;
+                        }}
+                    </style></head><body>" &
+                           $"<h4>{subject}</h4>" &
+                           $"<div style='margin-bottom: 10px; font-size: 12px;'>" &
+                           $"<strong>发件人:</strong> {senderName}<br/>" &
+                           $"<strong>时间:</strong> {receivedTime}" &
                            $"</div>" &
-                           $"<div style='border-top: 1px solid var(--theme-color, #0078d7); padding-top: 10px;'>" &
-                           $"<style>.hidden-table {{display: none;}} img {{display: none;}}</style>" &
+                           $"<div style='border-top: 1px solid {accentColor}; padding-top: 10px;'>" &
                            $"{htmlBody}" &
                            $"</div>" &
                            "</body></html>"
+                    Debug.WriteLine($"[DisplayMailContent] 返回邮件HTML内容，长度: {htmlContent.Length}")
+                    If htmlContent.Length > 0 Then
+                        Dim preview = If(htmlContent.Length > 200, htmlContent.Substring(0, 200), htmlContent)
+                        Debug.WriteLine($"[DisplayMailContent] HTML内容预览: {preview}")
+                    End If
+                    Return htmlContent
                 Catch ex As System.Runtime.InteropServices.COMException
                     Debug.WriteLine($"COM异常访问邮件属性 (HRESULT: {ex.HResult:X8}): {ex.Message}")
-                    Return "<html><body style='font-family: Arial; padding: 10px;'>无法访问邮件属性</body></html>"
+                    Return $"<html><head><style>body {{ background-color: {bgColor} !important; color: {fgColor} !important; font-family: Arial; padding: 10px; }}</style></head><body>无法访问邮件属性</body></html>"
                 Catch ex As System.Exception
                     Debug.WriteLine($"访问邮件属性时发生异常: {ex.Message}")
-                    Return "<html><body style='font-family: Arial; padding: 10px;'>无法访问邮件属性</body></html>"
+                    Return $"<html><head><style>body {{ background-color: {bgColor} !important; color: {fgColor} !important; font-family: Arial; padding: 10px; }}</style></head><body>无法访问邮件属性</body></html>"
                 End Try
 
                        '"<div style='border-top: 1px solid #ccc; padding-top: 10px;'> <style> .hidden-table {display: none;} img {display: none;}</style>"
             ElseIf TypeOf mail Is AppointmentItem Then
                 Dim appointment As AppointmentItem = DirectCast(mail, AppointmentItem)
+                
+                ' 使用全局主题变量
+                Dim bgColor As String = MailThreadPane.globalThemeBackgroundColor
+                Dim fgColor As String = MailThreadPane.globalThemeForegroundColor
+                Dim accentColor As String = MailThreadPane.globalThemeAccentColor
+                
                 Try
                     Dim subject As String = If(String.IsNullOrEmpty(appointment.Subject), "无主题", appointment.Subject)
                     Dim organizer As String = If(String.IsNullOrEmpty(appointment.Organizer), "未知", appointment.Organizer)
@@ -147,26 +256,51 @@ Namespace OutlookMyList.Handlers
                     Dim location As String = If(String.IsNullOrEmpty(appointment.Location), "未设置", appointment.Location)
                     Dim body As String = If(String.IsNullOrEmpty(appointment.Body), "", appointment.Body.Replace(vbCrLf, "<br>").Replace("<br><br>", "<br>"))
                     
-                    Return $"<html><body style='font-family: Arial; padding: 10px;Font-size:12px;'>" &
-                           $"<h4 style='color: var(--theme-color, #0078d7);'>{subject}</h4>" &
-                           $"<div style='margin-bottom: 10px;Font-size:12px;'>" &
-                           $"<strong style='color: var(--theme-color, #0078d7);'>组织者:</strong> {organizer}<br/>" &
-                           $"<strong style='color: var(--theme-color, #0078d7);'>开始时间:</strong> {startTime}<br/>" &
-                           $"<strong style='color: var(--theme-color, #0078d7);'>结束时间:</strong> {endTime}<br/>" &
-                           $"<strong style='color: var(--theme-color, #0078d7);'>地点:</strong> {location}" &
+                    Return $"<html><head><style>
+                        body {{
+                            background-color: {bgColor} !important;
+                            color: {fgColor} !important;
+                            font-family: Arial, sans-serif;
+                            padding: 10px;
+                            font-size: 12px;
+                            margin: 0;
+                        }}
+                        h4 {{
+                            color: {accentColor} !important;
+                            margin-top: 0;
+                        }}
+                        strong {{
+                            color: {accentColor} !important;
+                        }}
+                        div {{
+                            border-color: {accentColor} !important;
+                        }}
+                    </style></head><body>" &
+                           $"<h4>{subject}</h4>" &
+                           $"<div style='margin-bottom: 10px; font-size: 12px;'>" &
+                           $"<strong>组织者:</strong> {organizer}<br/>" &
+                           $"<strong>开始时间:</strong> {startTime}<br/>" &
+                           $"<strong>结束时间:</strong> {endTime}<br/>" &
+                           $"<strong>地点:</strong> {location}" &
                            $"</div>" &
-                           $"<div style='border-top: 1px solid var(--theme-color, #0078d7); padding-top: 10px;Font-size:12px;'>" &
+                           $"<div style='border-top: 1px solid {accentColor}; padding-top: 10px; font-size: 12px;'>" &
                            $"{body}" &
                            $"</div></body></html>"
                 Catch ex As System.Runtime.InteropServices.COMException
                     Debug.WriteLine($"COM异常访问会议属性 (HRESULT: {ex.HResult:X8}): {ex.Message}")
-                    Return "<html><body style='font-family: Arial; padding: 10px;'>无法访问会议属性</body></html>"
+                    Return $"<html><head><style>body {{ background-color: {bgColor} !important; color: {fgColor} !important; font-family: Arial; padding: 10px; }}</style></head><body>无法访问会议属性</body></html>"
                 Catch ex As System.Exception
                     Debug.WriteLine($"访问会议属性时发生异常: {ex.Message}")
-                    Return "<html><body style='font-family: Arial; padding: 10px;'>无法访问会议属性</body></html>"
+                    Return $"<html><head><style>body {{ background-color: {bgColor} !important; color: {fgColor} !important; font-family: Arial; padding: 10px; }}</style></head><body>无法访问会议属性</body></html>"
                 End Try
             ElseIf TypeOf mail Is TaskItem Then
                 Dim task As TaskItem = DirectCast(mail, TaskItem)
+                
+                ' 使用全局主题变量
+                Dim bgColor As String = MailThreadPane.globalThemeBackgroundColor
+                Dim fgColor As String = MailThreadPane.globalThemeForegroundColor
+                Dim accentColor As String = MailThreadPane.globalThemeAccentColor
+                
                 Try
                     Dim subject As String = If(String.IsNullOrEmpty(task.Subject), "无主题", task.Subject)
                     Dim startDate As String = If(task.StartDate = DateTime.MinValue, "未设置", task.StartDate.ToString("yyyy-MM-dd HH:mm:ss"))
@@ -175,26 +309,50 @@ Namespace OutlookMyList.Handlers
                     Dim status As String = GetTaskStatus(task.Status)
                     Dim body As String = If(String.IsNullOrEmpty(task.Body), "", task.Body.Replace(vbCrLf, "<br>").Replace("<br><br>", "<br>"))
                     
-                    Return $"<html><body style='font-family: Arial; padding: 10px;Font-size:12px;'>" &
-                           $"<h4 style='color: var(--theme-color, #0078d7);'>{subject}</h4>" &
-                           $"<div style='margin-bottom: 10px;Font-size:12px;'>" &
-                           $"<strong style='color: var(--theme-color, #0078d7);'>开始时间:</strong> {startDate}<br/>" &
-                           $"<strong style='color: var(--theme-color, #0078d7);'>结束时间:</strong> {dueDate}<br/>" &
-                           $"<strong style='color: var(--theme-color, #0078d7);'>完成度:</strong> {percentComplete}%<br/>" &
-                           $"<strong style='color: var(--theme-color, #0078d7);'>状态:</strong> {status}" &
+                    Return $"<html><head><style>
+                        body {{
+                            background-color: {bgColor} !important;
+                            color: {fgColor} !important;
+                            font-family: Arial, sans-serif;
+                            padding: 10px;
+                            font-size: 12px;
+                            margin: 0;
+                        }}
+                        h4 {{
+                            color: {accentColor} !important;
+                            margin-top: 0;
+                        }}
+                        strong {{
+                            color: {accentColor} !important;
+                        }}
+                        div {{
+                            border-color: {accentColor} !important;
+                        }}
+                    </style></head><body>" &
+                           $"<h4>{subject}</h4>" &
+                           $"<div style='margin-bottom: 10px; font-size: 12px;'>" &
+                           $"<strong>开始时间:</strong> {startDate}<br/>" &
+                           $"<strong>结束时间:</strong> {dueDate}<br/>" &
+                           $"<strong>完成度:</strong> {percentComplete}%<br/>" &
+                           $"<strong>状态:</strong> {status}" &
                            $"</div>" &
-                           $"<div style='border-top: 1px solid var(--theme-color, #0078d7); padding-top: 10px;Font-size:12px;'>" &
+                           $"<div style='border-top: 1px solid {accentColor}; padding-top: 10px; font-size: 12px;'>" &
                            $"{body}" &
                            $"</div></body></html>"
                 Catch ex As System.Runtime.InteropServices.COMException
                     Debug.WriteLine($"COM异常访问任务属性 (HRESULT: {ex.HResult:X8}): {ex.Message}")
-                    Return "<html><body style='font-family: Arial; padding: 10px;'>无法访问任务属性</body></html>"
+                    Return $"<html><head><style>body {{ background-color: {bgColor} !important; color: {fgColor} !important; font-family: Arial; padding: 10px; }}</style></head><body>无法访问任务属性</body></html>"
                 Catch ex As System.Exception
                     Debug.WriteLine($"访问任务属性时发生异常: {ex.Message}")
-                    Return "<html><body style='font-family: Arial; padding: 10px;'>无法访问任务属性</body></html>"
+                    Return $"<html><head><style>body {{ background-color: {bgColor} !important; color: {fgColor} !important; font-family: Arial; padding: 10px; }}</style></head><body>无法访问任务属性</body></html>"
                 End Try
             ElseIf TypeOf mail Is MeetingItem Then
                 Dim meeting As MeetingItem = DirectCast(mail, MeetingItem)
+                
+                ' 使用全局主题变量
+                Dim bgColor As String = MailThreadPane.globalThemeBackgroundColor
+                Dim fgColor As String = MailThreadPane.globalThemeForegroundColor
+                Dim accentColor As String = MailThreadPane.globalThemeAccentColor
 
                 ' 获取关联的约会项目以获取时间信息
                 Dim associatedAppointment As AppointmentItem = meeting.GetAssociatedAppointment(False)
@@ -221,7 +379,7 @@ Namespace OutlookMyList.Handlers
                     Dim senderName As String = If(String.IsNullOrEmpty(meeting.SenderName), "未知", meeting.SenderName)
                     Dim body As String = If(String.IsNullOrEmpty(meeting.Body), "", meeting.Body.Replace(vbCrLf, "<br>").Replace(" <br><br>", "<br>"))
                     
-                    Return $"<html><body style='font-family: Arial; padding: 10px;Font-size:12px;'>" &
+                    Return $"<html><head><style>body {{ background-color: {bgColor} !important; color: {fgColor} !important; font-family: Arial; padding: 10px; font-size: 12px; }}</style></head><body>" &
                            $"<h4>{subject}</h4>" &
                            $"<div style='margin-bottom: 10px;Font-size:12px;'>" &
                            $"<strong>状态:</strong> {meetingStatus}<br/>" &
@@ -241,10 +399,10 @@ Namespace OutlookMyList.Handlers
                            $"</div></body></html>"
                 Catch ex As System.Runtime.InteropServices.COMException
                     Debug.WriteLine($"COM异常访问会议属性 (HRESULT: {ex.HResult:X8}): {ex.Message}")
-                    Return "<html><body style='font-family: Arial; padding: 10px;'>无法访问会议属性</body></html>"
+                    Return $"<html><head><style>body {{ background-color: {bgColor} !important; color: {fgColor} !important; font-family: Arial; padding: 10px; }}</style></head><body>无法访问会议属性</body></html>"
                 Catch ex As System.Exception
                     Debug.WriteLine($"访问会议属性时发生异常: {ex.Message}")
-                    Return "<html><body style='font-family: Arial; padding: 10px;'>无法访问会议属性</body></html>"
+                    Return $"<html><head><style>body {{ background-color: {bgColor} !important; color: {fgColor} !important; font-family: Arial; padding: 10px; }}</style></head><body>无法访问会议属性</body></html>"
                 End Try
 
                 If 0 Then
@@ -262,7 +420,12 @@ Namespace OutlookMyList.Handlers
         Catch ex As System.Exception
             Debug.WriteLine($"显示邮件内容时出错: {ex.Message}")
         End Try
-        Return "<html><body><p>无法显示内容</p></body></html>"
+        ' 使用全局主题变量作为默认值
+        Dim defaultBgColor As String = MailThreadPane.globalThemeBackgroundColor
+        Dim defaultFgColor As String = MailThreadPane.globalThemeForegroundColor
+        Dim defaultHtml As String = $"<html><head><style>body {{ background-color: {defaultBgColor} !important; color: {defaultFgColor} !important; font-family: Arial; padding: 10px; }}</style></head><body><p>无法显示内容</p></body></html>"
+        Debug.WriteLine($"[DisplayMailContent] 返回默认HTML内容，长度: {defaultHtml.Length}")
+        Return defaultHtml
     End Function
     Public Shared Sub OpenLink(url As String)
         Try

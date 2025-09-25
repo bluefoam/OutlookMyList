@@ -23,7 +23,7 @@ Public Class MailThreadPane
     Private Shadows ReadOnly defaultFont As Font
     Private ReadOnly highlightFont As Font
     Private ReadOnly normalFont As Font
-    Private ReadOnly highlightColor As Color = Color.FromArgb(230, 240, 255)
+    Private ReadOnly highlightColor As Color = SystemColors.Highlight
 
     ' MessageClass映射缓存 - 提高类型判断效率
     Private Shared ReadOnly MessageClassBaseIndex As New Dictionary(Of String, Integer) From {
@@ -66,8 +66,20 @@ Public Class MailThreadPane
     Private currentBackColor As Color = SystemColors.Window
     Private currentForeColor As Color = SystemColors.WindowText
 
+    ' 全局主题变量 - 缓存当前主题状态，避免每次重新获取
+    Public Shared globalThemeBackgroundColor As String = "#ffffff"
+    Public Shared globalThemeForegroundColor As String = "#000000"
+    Public Shared globalThemeAccentColor As String = "#0078d7"
+    Public Shared globalThemeLastUpdate As DateTime = DateTime.MinValue
+
+    ' 主题应用标志 - 用于处理异步控件创建的时序问题
+    Private needsThemeApplication As Boolean = False
+
     ' 抑制在列表构造/填充时触发 WebView 刷新或加载的标志
     Private suppressWebViewUpdate As Integer = 0 ' 使用计数器以支持嵌套调用
+
+    ' 标志：当前是否正在显示邮件内容（而不是默认的"请选择一封邮件"内容）
+    Private isDisplayingMailContent As Boolean = False
 
     ' 存储当前的会话分组数据，用于会话节点点击时获取最新邮件
     Private currentConversationGroups As Dictionary(Of String, List(Of (EntryID As String, Subject As String, Received As DateTime)))
@@ -78,6 +90,13 @@ Public Class MailThreadPane
             Return suppressWebViewUpdate > 0
         End Get
     End Property
+
+    ' 重置WebView更新抑制状态的公共方法
+    Public Sub ResetWebViewUpdateSuppression()
+        Dim oldValue As Integer = suppressWebViewUpdate
+        suppressWebViewUpdate = 0
+        Debug.WriteLine($"ResetWebViewUpdateSuppression: suppressWebViewUpdate从 {oldValue} 重置为 {suppressWebViewUpdate}")
+    End Sub
 
     ' 分页功能开关的私有字段
     Private _isPaginationEnabled As Boolean = False
@@ -116,7 +135,7 @@ Public Class MailThreadPane
                             For i As Integer = 0 To allListViewItems.Count - 1
                                 Dim item = allListViewItems(i)
                                 Dim clonedItem = CType(item.Clone(), ListViewItem)
-                                lvMails.Items.Add(clonedItem)
+                                AddItemWithTheme(lvMails, clonedItem)
                                 mailItems.Add((i, ConvertEntryIDToString(item.Tag)))
                             Next
                         Finally
@@ -137,66 +156,120 @@ Public Class MailThreadPane
     ' 应用主题颜色
     Public Sub ApplyTheme(backgroundColor As Color, foregroundColor As Color)
         Try
+            Debug.WriteLine($"=== ApplyTheme 开始 ===")
+            Debug.WriteLine($"背景色: {backgroundColor} (R:{backgroundColor.R}, G:{backgroundColor.G}, B:{backgroundColor.B})")
+            Debug.WriteLine($"前景色: {foregroundColor} (R:{foregroundColor.R}, G:{foregroundColor.G}, B:{foregroundColor.B})")
+
+            ' 更新全局主题变量
+            globalThemeBackgroundColor = $"#{backgroundColor.R:X2}{backgroundColor.G:X2}{backgroundColor.B:X2}"
+            globalThemeForegroundColor = $"#{foregroundColor.R:X2}{foregroundColor.G:X2}{foregroundColor.B:X2}"
+            globalThemeLastUpdate = DateTime.Now
+            Debug.WriteLine($"全局主题变量已更新: 背景={globalThemeBackgroundColor}, 前景={globalThemeForegroundColor}")
+
             ' 保存当前主题颜色
             currentBackColor = backgroundColor
             currentForeColor = foregroundColor
 
             ' 应用到控件
             Me.BackColor = backgroundColor
+            Debug.WriteLine($"主面板背景色已设置: {Me.BackColor}")
 
             ' 应用到ListView
             If lvMails IsNot Nothing Then
                 lvMails.BackColor = backgroundColor
                 lvMails.ForeColor = foregroundColor
+                ' 强制刷新ListView
+                lvMails.Refresh()
+                Debug.WriteLine($"ListView主题已应用: 背景={lvMails.BackColor}, 前景={lvMails.ForeColor}")
+            Else
+                Debug.WriteLine("警告: lvMails 为 Nothing")
             End If
 
-            ' 应用到任务列表
+            ' 应用到任务列表 - 如果taskList还没有创建，设置标志以便后续应用
             If taskList IsNot Nothing Then
                 taskList.BackColor = backgroundColor
                 taskList.ForeColor = foregroundColor
+                taskList.Refresh()
+                Debug.WriteLine("taskList主题已应用")
+            Else
+                Debug.WriteLine("taskList尚未创建，主题将在创建后应用")
+                needsThemeApplication = True
             End If
 
             ' 应用到邮件历史列表
             If mailHistoryList IsNot Nothing Then
                 mailHistoryList.BackColor = backgroundColor
                 mailHistoryList.ForeColor = foregroundColor
+                mailHistoryList.Refresh()
             End If
 
             ' 应用到待办邮件列表
             If pendingMailList IsNot Nothing Then
                 pendingMailList.BackColor = backgroundColor
                 pendingMailList.ForeColor = foregroundColor
+                pendingMailList.Refresh()
             End If
 
-            ' 应用到分隔控件
+            ' 应用到分隔控件 - 按正确顺序设置颜色以确保分割条颜色正确显示
             If splitter1 IsNot Nothing Then
+                ' 先设置面板颜色为非默认值，防止继承分割条颜色
+                splitter1.Panel1.BackColor = Color.White
+                splitter1.Panel2.BackColor = Color.White
+                ' 设置分割条颜色（通过SplitContainer的BackColor）
                 splitter1.BackColor = backgroundColor
+                ' 最后设置面板为正确的主题颜色
                 splitter1.Panel1.BackColor = backgroundColor
                 splitter1.Panel2.BackColor = backgroundColor
             End If
 
             If splitter2 IsNot Nothing Then
+                ' 先设置面板颜色为非默认值，防止继承分割条颜色
+                splitter2.Panel1.BackColor = Color.White
+                splitter2.Panel2.BackColor = Color.White
+                ' 设置分割条颜色（通过SplitContainer的BackColor）
                 splitter2.BackColor = backgroundColor
+                ' 最后设置面板为正确的主题颜色
                 splitter2.Panel1.BackColor = backgroundColor
                 splitter2.Panel2.BackColor = backgroundColor
             End If
 
             ' 应用到WebBrowser
             If mailBrowser IsNot Nothing Then
+                ' 设置WebBrowser控件本身的背景色
+                Try
+                    mailBrowser.BackColor = backgroundColor
+                Catch ex As System.Exception
+                    Debug.WriteLine($"设置WebBrowser背景色失败: {ex.Message}")
+                End Try
+
                 ' 更新WebBrowser的CSS样式变量
                 UpdateWebBrowserTheme(backgroundColor, foregroundColor)
+                Debug.WriteLine("WebBrowser主题已更新")
+            Else
+                Debug.WriteLine("警告: mailBrowser 为 Nothing")
             End If
 
             ' 应用到TabControl
             If tabControl IsNot Nothing Then
                 tabControl.BackColor = backgroundColor
                 tabControl.ForeColor = foregroundColor
-                
+                Debug.WriteLine($"TabControl主题已应用: 背景={tabControl.BackColor}, 前景={tabControl.ForeColor}")
+
                 ' 应用到所有TabPage
                 For Each tabPage As TabPage In tabControl.TabPages
                     tabPage.BackColor = backgroundColor
                     tabPage.ForeColor = foregroundColor
+                    Debug.WriteLine($"TabPage '{tabPage.Text}' 主题已应用: 背景={tabPage.BackColor}")
+
+                    ' 递归应用主题到TabPage中的所有控件
+                    ApplyThemeToControlsRecursive(tabPage, backgroundColor, foregroundColor)
                 Next
+
+                ' 强制重绘TabControl
+                tabControl.Invalidate()
+                tabControl.Refresh()
+            Else
+                Debug.WriteLine("警告: tabControl 为 Nothing")
             End If
 
             ' 应用到按钮面板
@@ -206,7 +279,13 @@ Public Class MailThreadPane
                 ' 应用到按钮面板中的所有控件
                 For Each ctrl As Control In btnPanel.Controls
                     If TypeOf ctrl Is Button Then
-                        ' 按钮保持系统默认颜色
+                        ' 为按钮应用主题颜色
+                        Dim btn As Button = DirectCast(ctrl, Button)
+                        btn.BackColor = backgroundColor
+                        btn.ForeColor = foregroundColor
+                        btn.FlatStyle = FlatStyle.Flat
+                        btn.FlatAppearance.BorderColor = foregroundColor
+                        btn.FlatAppearance.BorderSize = 1
                     Else
                         ctrl.BackColor = backgroundColor
                         ctrl.ForeColor = foregroundColor
@@ -214,11 +293,86 @@ Public Class MailThreadPane
                 Next
             End If
 
+            ' 应用到分页面板
+            Dim paginationPanel As Panel = TryCast(splitter1?.Panel1?.Tag, Panel)
+            If paginationPanel IsNot Nothing Then
+                paginationPanel.BackColor = backgroundColor
+                Debug.WriteLine($"分页面板主题已应用: 背景={paginationPanel.BackColor}")
+
+                ' 应用到分页面板中的所有控件
+                For Each ctrl As Control In paginationPanel.Controls
+                    If TypeOf ctrl Is Button Then
+                        ' 为分页按钮应用主题颜色
+                        Dim btn As Button = DirectCast(ctrl, Button)
+                        btn.BackColor = backgroundColor
+                        btn.ForeColor = foregroundColor
+                        btn.FlatStyle = FlatStyle.Flat
+                        btn.FlatAppearance.BorderColor = foregroundColor
+                        btn.FlatAppearance.BorderSize = 1
+                        Debug.WriteLine($"分页按钮 '{btn.Text}' 主题已应用: 背景={btn.BackColor}, 前景={btn.ForeColor}")
+                    ElseIf TypeOf ctrl Is Label Then
+                        ctrl.ForeColor = foregroundColor
+                        Debug.WriteLine($"分页标签 '{ctrl.Text}' 前景色已设置: {ctrl.ForeColor}")
+                    Else
+                        ctrl.BackColor = backgroundColor
+                        ctrl.ForeColor = foregroundColor
+                    End If
+                Next
+            Else
+                Debug.WriteLine("警告: 分页面板未找到")
+            End If
+
+            ' 应用主题到所有现有的ListView项目
+            ApplyThemeToAllListViewItems()
+
             ' 强制重绘
             Me.Invalidate(True)
-            Debug.WriteLine($"主题已应用: 背景色={backgroundColor}, 前景色={foregroundColor}")
+            Debug.WriteLine($"=== ApplyTheme 完成 ===")
+            Debug.WriteLine($"最终主题: 背景色={backgroundColor}, 前景色={foregroundColor}")
         Catch ex As System.Exception
             Debug.WriteLine("ApplyTheme error: " & ex.Message)
+        End Try
+    End Sub
+
+    ' 递归应用主题到控件及其子控件
+    Private Sub ApplyThemeToControlsRecursive(parent As Control, backgroundColor As Color, foregroundColor As Color)
+        Try
+            For Each ctrl As Control In parent.Controls
+                If TypeOf ctrl Is Button Then
+                    ' 为按钮应用主题颜色
+                    Dim btn As Button = DirectCast(ctrl, Button)
+                    btn.BackColor = backgroundColor
+                    btn.ForeColor = foregroundColor
+                    btn.FlatStyle = FlatStyle.Flat
+                    btn.FlatAppearance.BorderColor = foregroundColor
+                    btn.FlatAppearance.BorderSize = 1
+                    Debug.WriteLine($"按钮 '{btn.Text}' 主题已应用: 背景={btn.BackColor}, 前景={btn.ForeColor}")
+                ElseIf TypeOf ctrl Is Panel Then
+                    ' 为面板应用主题颜色
+                    ctrl.BackColor = backgroundColor
+                    ctrl.ForeColor = foregroundColor
+                    ' 递归处理面板中的控件
+                    ApplyThemeToControlsRecursive(ctrl, backgroundColor, foregroundColor)
+                ElseIf TypeOf ctrl Is Label Then
+                    ' 为标签应用前景色
+                    ctrl.ForeColor = foregroundColor
+                ElseIf Not (TypeOf ctrl Is ListView) Then
+                    ' 为其他控件应用主题颜色（除了ListView，因为它们已经单独处理了）
+                    Try
+                        ctrl.BackColor = backgroundColor
+                        ctrl.ForeColor = foregroundColor
+                    Catch
+                        ' 忽略某些控件可能不支持颜色设置的错误
+                    End Try
+
+                    ' 如果控件有子控件，递归处理
+                    If ctrl.HasChildren Then
+                        ApplyThemeToControlsRecursive(ctrl, backgroundColor, foregroundColor)
+                    End If
+                End If
+            Next
+        Catch ex As System.Exception
+            Debug.WriteLine($"ApplyThemeToControlsRecursive error: {ex.Message}")
         End Try
     End Sub
 
@@ -229,64 +383,130 @@ Public Class MailThreadPane
                 ' 构建CSS样式
                 Dim bgColorHex As String = $"#{backgroundColor.R:X2}{backgroundColor.G:X2}{backgroundColor.B:X2}"
                 Dim fgColorHex As String = $"#{foregroundColor.R:X2}{foregroundColor.G:X2}{foregroundColor.B:X2}"
-                
-                ' 创建主题样式的HTML
+
+                ' 计算辅助颜色
+                Dim accentColorHex As String = "#0078d7"
+                Dim borderColorHex As String = $"#{Math.Min(255, backgroundColor.R + 40):X2}{Math.Min(255, backgroundColor.G + 40):X2}{Math.Min(255, backgroundColor.B + 40):X2}"
+
+                ' 创建增强的主题样式，使用更强的CSS选择器和!important声明
                 Dim themeStyle As String = $"
-                <style>
-                    :root {{
-                        --theme-bg-color: {bgColorHex};
-                        --theme-fg-color: {fgColorHex};
-                        --theme-color: #0078d7;
+                <style type=""text/css"">
+                    /* 强制覆盖所有元素的背景和文字颜色 */
+                    *, *:before, *:after {{
+                        background-color: {bgColorHex} !important;
+                        color: {fgColorHex} !important;
+                        border-color: {borderColorHex} !important;
                     }}
-                    body {{
-                        background-color: var(--theme-bg-color) !important;
-                        color: var(--theme-fg-color) !important;
-                        font-family: Segoe UI, Arial, sans-serif;
-                        margin: 0;
-                        padding: 10px;
+                    
+                    html, body {{
+                        background-color: {bgColorHex} !important;
+                        color: {fgColorHex} !important;
+                        font-family: 'Segoe UI', Tahoma, Arial, sans-serif !important;
+                        margin: 0 !important;
+                        padding: 10px !important;
+                        line-height: 1.4 !important;
                     }}
-                    h4 {{
-                        color: var(--theme-color) !important;
-                        margin-top: 0;
+                    
+                    /* 标题样式 */
+                    h1, h2, h3, h4, h5, h6 {{
+                        color: {accentColorHex} !important;
+                        background-color: transparent !important;
+                        margin-top: 0 !important;
+                        margin-bottom: 10px !important;
                     }}
-                    strong {{
-                        color: var(--theme-color) !important;
+                    
+                    /* 强调文本 */
+                    strong, b, em, i {{
+                        color: {accentColorHex} !important;
+                        background-color: transparent !important;
                     }}
-                    div {{
-                        border-color: var(--theme-color) !important;
+                    
+                    /* 段落和文本 */
+                    p, div, span, td, th, li {{
+                        background-color: transparent !important;
+                        color: {fgColorHex} !important;
+                    }}
+                    
+                    /* 表格样式 */
+                    table {{
+                        background-color: transparent !important;
+                        border-color: {borderColorHex} !important;
+                    }}
+                    
+                    /* 链接样式 */
+                    a, a:visited, a:hover, a:active {{
+                        color: {accentColorHex} !important;
+                        background-color: transparent !important;
+                    }}
+                    
+                    /* 移除Outlook特定的样式 */
+                    .MsoNormal, .MsoPlainText {{
+                        background-color: transparent !important;
+                        color: {fgColorHex} !important;
+                    }}
+                    
+                    /* 处理内联样式的覆盖 */
+                    [style*=""background""] {{
+                        background-color: {bgColorHex} !important;
+                    }}
+                    
+                    [style*=""color""] {{
+                        color: {fgColorHex} !important;
                     }}
                 </style>"
 
-                ' 如果当前有内容，重新应用主题
-                If Not String.IsNullOrEmpty(mailBrowser.DocumentText) AndAlso 
-                   Not mailBrowser.DocumentText.Contains("请选择一封邮件") Then
-                    ' 获取当前内容并重新应用主题
-                    Dim currentContent As String = mailBrowser.DocumentText
-                    If currentContent.Contains("<style>") Then
-                        ' 替换现有样式
-                        Dim styleStart As Integer = currentContent.IndexOf("<style>")
-                        Dim styleEnd As Integer = currentContent.IndexOf("</style>") + 8
-                        If styleStart >= 0 AndAlso styleEnd > styleStart Then
-                            currentContent = currentContent.Remove(styleStart, styleEnd - styleStart)
-                        End If
-                    End If
-                    
-                    ' 插入新的主题样式
-                    If currentContent.Contains("<head>") Then
-                        currentContent = currentContent.Replace("<head>", "<head>" & themeStyle)
-                    ElseIf currentContent.Contains("<html>") Then
-                        currentContent = currentContent.Replace("<html>", "<html><head>" & themeStyle & "</head>")
-                    Else
-                        currentContent = "<html><head>" & themeStyle & "</head><body>" & currentContent & "</body></html>"
-                    End If
-                    
-                    mailBrowser.DocumentText = currentContent
+                ' 如果当前显示的是默认内容，更新为带主题的默认内容
+                If Not isDisplayingMailContent AndAlso Not String.IsNullOrEmpty(mailBrowser.DocumentText) AndAlso
+                   mailBrowser.DocumentText.Contains("请选择一封邮件") Then
+                    Debug.WriteLine("UpdateWebBrowserTheme: 更新默认内容主题")
+                    mailBrowser.DocumentText = GetThemedDefaultContent()
+                ElseIf isDisplayingMailContent AndAlso Not String.IsNullOrEmpty(mailBrowser.DocumentText) Then
+                    Debug.WriteLine("UpdateWebBrowserTheme: 当前正在显示邮件内容，跳过主题更新以避免干扰")
+                    ' 当正在显示邮件内容时，不进行主题更新，因为MailHandler.DisplayMailContent已经包含了正确的主题样式
                 End If
             End If
         Catch ex As System.Exception
             Debug.WriteLine($"UpdateWebBrowserTheme error: {ex.Message}")
         End Try
     End Sub
+
+    ' 获取当前主题颜色（从ThisAddIn获取）
+    Private Function GetCurrentThemeColors() As (backgroundColor As Color, foregroundColor As Color)
+        Try
+            ' 直接从ThisAddIn获取主题颜色
+            If Globals.ThisAddIn IsNot Nothing Then
+                Return Globals.ThisAddIn.GetCurrentThemeColors()
+            Else
+                Debug.WriteLine("ThisAddIn为空，使用默认颜色")
+                Return (SystemColors.Window, SystemColors.WindowText)
+            End If
+        Catch ex As System.Exception
+            Debug.WriteLine($"获取主题颜色失败: {ex.Message}")
+            ' 返回默认颜色
+            Return (SystemColors.Window, SystemColors.WindowText)
+        End Try
+    End Function
+
+    ' 生成带主题的默认WebBrowser内容
+    Private Function GetThemedDefaultContent() As String
+        ' 使用全局主题变量，避免每次重新获取导致的冲突
+        Debug.WriteLine($"GetThemedDefaultContent: 使用全局主题变量 - 背景: {globalThemeBackgroundColor}, 前景: {globalThemeForegroundColor}")
+
+        ' 重置邮件内容显示标志
+        isDisplayingMailContent = False
+        Debug.WriteLine($"GetThemedDefaultContent: 重置 isDisplayingMailContent = {isDisplayingMailContent}")
+
+        Return $"<html><head><style>
+            body {{
+                background-color: {globalThemeBackgroundColor} !important;
+                color: {globalThemeForegroundColor} !important;
+                font-family: Segoe UI, Arial, sans-serif;
+                margin: 0;
+                padding: 20px;
+                text-align: center;
+            }}
+        </style></head><body><div>请选择一封邮件</div></body></html>"
+    End Function
 
 
     Private WithEvents lvMails As ListView
@@ -476,8 +696,12 @@ Public Class MailThreadPane
             .Orientation = Orientation.Horizontal,
             .Panel1MinSize = 100,
             .Panel2MinSize = 150,
-            .SplitterWidth = 5
+            .SplitterWidth = 5,
+            .BackColor = currentBackColor  ' 设置分割条颜色
         }
+        ' 明确设置面板颜色以避免继承分割条颜色
+        splitter1.Panel1.BackColor = currentBackColor
+        splitter1.Panel2.BackColor = currentBackColor
 
         ' 创建第二个分隔控件
         splitter2 = New SplitContainer With {
@@ -485,8 +709,12 @@ Public Class MailThreadPane
             .Orientation = Orientation.Horizontal,
             .Panel1MinSize = 100,
             .Panel2MinSize = 50,
-            .SplitterWidth = 5
+            .SplitterWidth = 5,
+            .BackColor = currentBackColor  ' 设置分割条颜色
         }
+        ' 明确设置面板颜色以避免继承分割条颜色
+        splitter2.Panel1.BackColor = currentBackColor
+        splitter2.Panel2.BackColor = currentBackColor
 
         ' 先添加第二个分隔控件到第一个分隔控件的Panel2
         splitter1.Panel2.Controls.Add(splitter2)
@@ -501,6 +729,27 @@ Public Class MailThreadPane
         ' 允许JS调用到VB方法（用于点击链接时可能需要）
         mailBrowser.ObjectForScripting = Me
         splitter2.Panel1.Controls.Add(mailBrowser)
+
+        ' 延迟设置默认的主题化内容，确保主题完全初始化
+        Try
+            ' 使用Timer延迟设置，确保ThisAddIn的主题已经完全初始化
+            Dim themeTimer As New System.Windows.Forms.Timer()
+            themeTimer.Interval = 100 ' 延迟100毫秒
+            AddHandler themeTimer.Tick, Sub(sender, e)
+                                            Try
+                                                themeTimer.Stop()
+                                                themeTimer.Dispose()
+                                                mailBrowser.DocumentText = GetThemedDefaultContent()
+                                                Debug.WriteLine("延迟设置mailBrowser默认主题内容成功")
+                                            Catch ex2 As System.Exception
+                                                Debug.WriteLine($"延迟设置mailBrowser默认内容失败: {ex2.Message}")
+                                            End Try
+                                        End Sub
+            themeTimer.Start()
+            Debug.WriteLine("启动延迟设置mailBrowser主题内容的定时器")
+        Catch ex As System.Exception
+            Debug.WriteLine($"设置mailBrowser默认内容定时器失败: {ex.Message}")
+        End Try
 
         ' 然后添加第一个分隔控件到窗体
         Me.Controls.Add(splitter1)
@@ -800,12 +1049,11 @@ Public Class MailThreadPane
             .Sorting = SortOrder.Descending,
             .AllowColumnReorder = True,
             .HeaderStyle = ColumnHeaderStyle.Clickable,
-            .OwnerDraw = True,  ' 启用自定义绘制
-            .BackColor = currentBackColor,
-            .ForeColor = currentForeColor,
+            .OwnerDraw = True,  ' 启用自定义绘制以控制列头和项目颜色
             .SmallImageList = New ImageList() With {.ImageSize = New Size(16, 15)}, ' 设置行高
             .VirtualMode = False  ' 初始禁用虚拟模式，根据需要动态启用
         }
+        ' 不在这里设置颜色，等待ApplyTheme方法调用
 
         ' 创建右键菜单
         SetupContextMenu()
@@ -835,9 +1083,9 @@ Public Class MailThreadPane
         Dim paginationPanel As New Panel With {
             .Height = 25,
             .Dock = DockStyle.Bottom,
-            .BackColor = currentBackColor,
             .Padding = New Padding(0, 0, 0, 0)
         }
+        ' 不在这里设置颜色，等待ApplyTheme方法调用
 
         ' 创建分页导航控件
         Dim btnFirstPage As New Button With {
@@ -1015,12 +1263,168 @@ Public Class MailThreadPane
 
 
     Private Sub ListView_DrawColumnHeader(sender As Object, e As DrawListViewColumnHeaderEventArgs)
-        e.DrawDefault = True
+        ' 使用主题颜色绘制列头
+        Dim headerBackBrush As Brush = New SolidBrush(currentBackColor)
+        Dim headerTextBrush As Brush = New SolidBrush(currentForeColor)
+
+        ' 填充列头背景
+        e.Graphics.FillRectangle(headerBackBrush, e.Bounds)
+
+        ' 绘制列头文本 - 添加一些内边距
+        Dim sf As New StringFormat()
+        sf.Alignment = StringAlignment.Near
+        sf.LineAlignment = StringAlignment.Center
+        sf.Trimming = StringTrimming.EllipsisCharacter
+
+        ' 为文本添加左边距，避免紧贴边框
+        Dim textRect As New Rectangle(e.Bounds.X + 4, e.Bounds.Y, e.Bounds.Width - 8, e.Bounds.Height)
+        e.Graphics.DrawString(e.Header.Text, Me.Font, headerTextBrush, textRect, sf)
+
+        ' 绘制列头边框 - 使用更明显的边框颜色
+        Dim borderColor As Color = Color.FromArgb(180, currentForeColor.R, currentForeColor.G, currentForeColor.B) ' 70% 透明度，更明显
+        Dim borderPen As New Pen(borderColor)
+
+        ' 绘制右边框和底边框，形成分隔线效果
+        e.Graphics.DrawLine(borderPen, e.Bounds.Right - 1, e.Bounds.Top, e.Bounds.Right - 1, e.Bounds.Bottom - 1)
+        e.Graphics.DrawLine(borderPen, e.Bounds.Left, e.Bounds.Bottom - 1, e.Bounds.Right - 1, e.Bounds.Bottom - 1)
+
+        ' 清理资源
+        headerBackBrush.Dispose()
+        headerTextBrush.Dispose()
+        borderPen.Dispose()
+        sf.Dispose()
+    End Sub
+
+    Private Sub PendingMailList_DrawItem(sender As Object, e As DrawListViewItemEventArgs)
+        ' 使用主题颜色绘制待办邮件ListView项目
+        Dim backgroundColor As Color = If(e.Item.BackColor = Color.Empty, currentBackColor, e.Item.BackColor)
+        Dim backBrush As Brush = New SolidBrush(backgroundColor)
+        e.Graphics.FillRectangle(backBrush, e.Bounds)
+
+        ' 使用当前主题的前景色
+        Dim textBrush As Brush = New SolidBrush(currentForeColor)
+
+        ' 绘制项目文本
+        Dim sf As New StringFormat()
+        sf.Alignment = StringAlignment.Near
+        sf.LineAlignment = StringAlignment.Center
+        sf.Trimming = StringTrimming.EllipsisCharacter
+
+        e.Graphics.DrawString(e.Item.Text, Me.Font, textBrush, e.Bounds, sf)
+
+        ' 清理资源
+        backBrush.Dispose()
+        textBrush.Dispose()
+        sf.Dispose()
+
+        ' 绘制子项目
+        e.DrawDefault = False
+        For i As Integer = 0 To e.Item.SubItems.Count - 1
+            If i < pendingMailList.Columns.Count Then
+                Dim subItemBounds As Rectangle = e.Item.GetBounds(ItemBoundsPortion.Entire)
+                Dim columnWidth As Integer = pendingMailList.Columns(i).Width
+                Dim x As Integer = 0
+                For j As Integer = 0 To i - 1
+                    x += pendingMailList.Columns(j).Width
+                Next
+                subItemBounds = New Rectangle(x, subItemBounds.Y, columnWidth, subItemBounds.Height)
+
+                Dim subItemBackBrush As Brush = New SolidBrush(backgroundColor)
+                e.Graphics.FillRectangle(subItemBackBrush, subItemBounds)
+                e.Graphics.DrawString(e.Item.SubItems(i).Text, Me.Font, textBrush, subItemBounds, sf)
+                subItemBackBrush.Dispose()
+            End If
+        Next
+    End Sub
+
+    Private Sub TaskList_DrawItem(sender As Object, e As DrawListViewItemEventArgs)
+        ' 使用主题颜色绘制任务ListView项目
+        Dim backgroundColor As Color = If(e.Item.BackColor = Color.Empty, currentBackColor, e.Item.BackColor)
+        Dim backBrush As Brush = New SolidBrush(backgroundColor)
+        e.Graphics.FillRectangle(backBrush, e.Bounds)
+
+        ' 使用当前主题的前景色
+        Dim textBrush As Brush = New SolidBrush(currentForeColor)
+
+        ' 绘制项目文本
+        Dim sf As New StringFormat()
+        sf.Alignment = StringAlignment.Near
+        sf.LineAlignment = StringAlignment.Center
+        sf.Trimming = StringTrimming.EllipsisCharacter
+
+        e.Graphics.DrawString(e.Item.Text, Me.Font, textBrush, e.Bounds, sf)
+
+        ' 清理资源
+        backBrush.Dispose()
+        textBrush.Dispose()
+        sf.Dispose()
+
+        ' 绘制子项目
+        e.DrawDefault = False
+        For i As Integer = 0 To e.Item.SubItems.Count - 1
+            If i < taskList.Columns.Count Then
+                Dim subItemBounds As Rectangle = e.Item.GetBounds(ItemBoundsPortion.Entire)
+                Dim columnWidth As Integer = taskList.Columns(i).Width
+                Dim x As Integer = 0
+                For j As Integer = 0 To i - 1
+                    x += taskList.Columns(j).Width
+                Next
+                subItemBounds = New Rectangle(x, subItemBounds.Y, columnWidth, subItemBounds.Height)
+
+                Dim subItemBackBrush As Brush = New SolidBrush(backgroundColor)
+                e.Graphics.FillRectangle(subItemBackBrush, subItemBounds)
+                e.Graphics.DrawString(e.Item.SubItems(i).Text, Me.Font, textBrush, subItemBounds, sf)
+                subItemBackBrush.Dispose()
+            End If
+        Next
+    End Sub
+
+    Private Sub MailHistoryList_DrawItem(sender As Object, e As DrawListViewItemEventArgs)
+        ' 使用主题颜色绘制邮件历史ListView项目
+        Dim backgroundColor As Color = If(e.Item.BackColor = Color.Empty, currentBackColor, e.Item.BackColor)
+        Dim backBrush As Brush = New SolidBrush(backgroundColor)
+        e.Graphics.FillRectangle(backBrush, e.Bounds)
+
+        ' 使用当前主题的前景色
+        Dim textBrush As Brush = New SolidBrush(currentForeColor)
+
+        ' 绘制项目文本
+        Dim sf As New StringFormat()
+        sf.Alignment = StringAlignment.Near
+        sf.LineAlignment = StringAlignment.Center
+        sf.Trimming = StringTrimming.EllipsisCharacter
+
+        e.Graphics.DrawString(e.Item.Text, Me.Font, textBrush, e.Bounds, sf)
+
+        ' 清理资源
+        backBrush.Dispose()
+        textBrush.Dispose()
+        sf.Dispose()
+
+        ' 绘制子项目
+        e.DrawDefault = False
+        For i As Integer = 0 To e.Item.SubItems.Count - 1
+            If i < mailHistoryList.Columns.Count Then
+                Dim subItemBounds As Rectangle = e.Item.GetBounds(ItemBoundsPortion.Entire)
+                Dim columnWidth As Integer = mailHistoryList.Columns(i).Width
+                Dim x As Integer = 0
+                For j As Integer = 0 To i - 1
+                    x += mailHistoryList.Columns(j).Width
+                Next
+                subItemBounds = New Rectangle(x, subItemBounds.Y, columnWidth, subItemBounds.Height)
+
+                Dim subItemBackBrush As Brush = New SolidBrush(backgroundColor)
+                e.Graphics.FillRectangle(subItemBackBrush, subItemBounds)
+                e.Graphics.DrawString(e.Item.SubItems(i).Text, Me.Font, textBrush, subItemBounds, sf)
+                subItemBackBrush.Dispose()
+            End If
+        Next
     End Sub
 
     Private Sub ListView_DrawSubItem(sender As Object, e As DrawListViewSubItemEventArgs)
-        ' 使用当前项的背景色
-        Dim backBrush As Brush = New SolidBrush(e.Item.BackColor)
+        ' 使用ListView的背景色或项目的背景色（如果项目有特殊背景色）
+        Dim backgroundColor As Color = If(e.Item.BackColor = Color.Empty, currentBackColor, e.Item.BackColor)
+        Dim backBrush As Brush = New SolidBrush(backgroundColor)
         e.Graphics.FillRectangle(backBrush, e.Bounds)
 
         ' 第一列使用 emoji 字体，其他列使用默认字体
@@ -1028,22 +1432,26 @@ Public Class MailThreadPane
         sf.Trimming = StringTrimming.EllipsisCharacter
         sf.FormatFlags = StringFormatFlags.NoWrap
 
-        If e.ColumnIndex = 0 Then
+        ' 使用当前主题的前景色
+        Dim textBrush As Brush = New SolidBrush(currentForeColor)
 
+        If e.ColumnIndex = 0 Then
             If e.SubItem.Text.Contains("🚩") Then
                 ' 使用特殊颜色和字体
                 Dim specialFont As New Font(iconFont, FontStyle.Bold)
                 Dim specialBrush As Brush = Brushes.Red
                 e.Graphics.DrawString(e.SubItem.Text, specialFont, specialBrush, e.Bounds, sf)
             Else
-                e.Graphics.DrawString(e.SubItem.Text, iconFont, Brushes.Black, e.Bounds, sf)
+                e.Graphics.DrawString(e.SubItem.Text, iconFont, textBrush, e.Bounds, sf)
             End If
         Else
             ' 根据是否高亮使用不同字体
             Dim font As Font = If(e.Item.BackColor = highlightColor, highlightFont, normalFont)
-            e.Graphics.DrawString(e.SubItem.Text, font, Brushes.Black, e.Bounds, sf)
+            e.Graphics.DrawString(e.SubItem.Text, font, textBrush, e.Bounds, sf)
         End If
+
         backBrush.Dispose()
+        textBrush.Dispose()
     End Sub
 
     ' ListView虚拟模式事件处理器
@@ -1077,13 +1485,47 @@ Public Class MailThreadPane
         Debug.WriteLine($"缓存虚拟项: {e.StartIndex} 到 {e.EndIndex}")
     End Sub
 
+    Private Sub TabControl_DrawItem(sender As Object, e As DrawItemEventArgs)
+        ' 使用主题颜色绘制Tab标签页
+        Dim tabControl As TabControl = DirectCast(sender, TabControl)
+        Dim tabPage As TabPage = tabControl.TabPages(e.Index)
+
+        ' 确定是否为选中的标签页
+        Dim isSelected As Boolean = (e.Index = tabControl.SelectedIndex)
+
+        ' 设置背景色和文字色
+        Dim backColor As Color = If(isSelected, currentBackColor, Color.FromArgb(Math.Max(0, currentBackColor.R - 20), Math.Max(0, currentBackColor.G - 20), Math.Max(0, currentBackColor.B - 20)))
+        Dim textColor As Color = currentForeColor
+
+        ' 填充背景
+        Using backBrush As New SolidBrush(backColor)
+            e.Graphics.FillRectangle(backBrush, e.Bounds)
+        End Using
+
+        ' 绘制文字
+        Using textBrush As New SolidBrush(textColor)
+            Dim sf As New StringFormat()
+            sf.Alignment = StringAlignment.Center
+            sf.LineAlignment = StringAlignment.Center
+            e.Graphics.DrawString(tabPage.Text, Me.Font, textBrush, e.Bounds, sf)
+            sf.Dispose()
+        End Using
+
+        ' 绘制边框（可选）
+        If isSelected Then
+            Using borderPen As New Pen(currentForeColor)
+                e.Graphics.DrawRectangle(borderPen, e.Bounds)
+            End Using
+        End If
+    End Sub
+
 
     Private Sub SetupTabPages()
         tabControl = New TabControl With {
             .Dock = DockStyle.Fill,
-            .BackColor = currentBackColor,
-            .ForeColor = currentForeColor
+            .DrawMode = TabDrawMode.OwnerDrawFixed
         }
+        ' 不在这里设置颜色，等待ApplyTheme方法调用
         splitter2.Panel2.Controls.Add(tabControl)
 
         ' 设置四个tab
@@ -1091,6 +1533,9 @@ Public Class MailThreadPane
         SetupPendingMailTab()      ' 待办邮件tab
         SetupNotesTab()            ' 笔记tab
         SetupTaskManagementTab()   ' 任务tab
+
+        ' 添加自定义绘制事件处理器
+        AddHandler tabControl.DrawItem, AddressOf TabControl_DrawItem
 
         ' 设置默认选中第一个tab
         tabControl.SelectedIndex = 0
@@ -1820,7 +2265,11 @@ Public Class MailThreadPane
         taskList = New ListView With {
             .Dock = DockStyle.Fill,
             .BackColor = currentBackColor,
-            .ForeColor = currentForeColor
+            .ForeColor = currentForeColor,
+            .View = System.Windows.Forms.View.Details,
+            .FullRowSelect = True,
+            .GridLines = True,
+            .OwnerDraw = True  ' 启用自定义绘制以控制列头和项目颜色
         }
         OutlookMyList.Handlers.TaskHandler.SetupTaskList(taskList)
         taskList.Columns.Add("主题", 200)
@@ -1832,6 +2281,17 @@ Public Class MailThreadPane
 
         ' Add the event handler here, after taskList is initialized
         AddHandler taskList.DoubleClick, AddressOf TaskList_DoubleClick
+        AddHandler taskList.DrawColumnHeader, AddressOf ListView_DrawColumnHeader
+        AddHandler taskList.DrawItem, AddressOf TaskList_DrawItem
+
+        ' 检查是否需要应用主题（处理异步创建的时序问题）
+        If needsThemeApplication Then
+            taskList.BackColor = currentBackColor
+            taskList.ForeColor = currentForeColor
+            taskList.Refresh()
+            needsThemeApplication = False
+            Debug.WriteLine("taskList创建后应用了延迟的主题设置")
+        End If
 
         Dim containerPanel As New Panel With {
             .Dock = DockStyle.Fill
@@ -1975,7 +2435,8 @@ Public Class MailThreadPane
             .Dock = DockStyle.Fill,
             .Visible = True,
             .BackColor = currentBackColor,
-            .ForeColor = currentForeColor
+            .ForeColor = currentForeColor,
+            .OwnerDraw = True  ' 启用自定义绘制以控制列头和项目颜色
         }
 
         ' 设置ListView列
@@ -1986,6 +2447,10 @@ Public Class MailThreadPane
         ' 添加点击事件处理程序
         AddHandler pendingMailList.Click, AddressOf MailHistory_Click
         AddHandler pendingMailList.DoubleClick, AddressOf MailHistory_DoubleClick
+
+        ' 添加自定义绘制事件处理程序
+        AddHandler pendingMailList.DrawColumnHeader, AddressOf ListView_DrawColumnHeader
+        AddHandler pendingMailList.DrawItem, AddressOf PendingMailList_DrawItem
 
         tabPage.Controls.Add(pendingMailList)
         tabControl.TabPages.Add(tabPage)
@@ -2110,7 +2575,8 @@ Public Class MailThreadPane
             .Dock = DockStyle.None,
             .Visible = False,
             .BackColor = currentBackColor,
-            .ForeColor = currentForeColor
+            .ForeColor = currentForeColor,
+            .OwnerDraw = True  ' 启用自定义绘制以控制列头和项目颜色
         }
 
         ' 设置ListView列
@@ -2121,6 +2587,8 @@ Public Class MailThreadPane
         ' 添加点击事件处理程序
         AddHandler mailHistoryList.Click, AddressOf MailHistory_Click
         AddHandler mailHistoryList.DoubleClick, AddressOf MailHistory_DoubleClick
+        AddHandler mailHistoryList.DrawColumnHeader, AddressOf ListView_DrawColumnHeader
+        AddHandler mailHistoryList.DrawItem, AddressOf MailHistoryList_DrawItem
 
         ' 设置TreeView右键菜单
         SetupTreeContextMenu()
@@ -4029,6 +4497,88 @@ Public Class MailThreadPane
         End Try
     End Sub
 
+    ' WebBrowser文档加载完成事件处理
+    Private Sub WebBrowser_DocumentCompleted(sender As Object, e As WebBrowserDocumentCompletedEventArgs)
+        Try
+            Debug.WriteLine($"WebBrowser_DocumentCompleted 触发，isDisplayingMailContent = {isDisplayingMailContent}")
+
+            ' 移除事件处理器避免重复调用
+            RemoveHandler mailBrowser.DocumentCompleted, AddressOf WebBrowser_DocumentCompleted
+
+            ' 只有在显示邮件内容时才应用主题样式
+            If isDisplayingMailContent AndAlso mailBrowser.Document IsNot Nothing Then
+                Debug.WriteLine("开始在DocumentCompleted中应用主题样式")
+                Dim doc = mailBrowser.Document
+
+                ' 使用当前保存的主题颜色
+                Dim bgColor As Color = currentBackColor
+                Dim fgColor As Color = currentForeColor
+                Dim accentColor As Color = Color.FromArgb(0, 120, 215) ' 默认蓝色强调色
+                Dim bgColorHex As String = $"#{bgColor.R:X2}{bgColor.G:X2}{bgColor.B:X2}"
+                Dim fgColorHex As String = $"#{fgColor.R:X2}{fgColor.G:X2}{fgColor.B:X2}"
+                Dim accentColorHex As String = $"#{accentColor.R:X2}{accentColor.G:X2}{accentColor.B:X2}"
+
+                ' 通过JavaScript强制应用样式，彻底覆盖所有可能的颜色设置
+                Dim script As String = $"
+                    (function() {{
+                        var elements = document.getElementsByTagName('*');
+                        for (var i = 0; i < elements.length; i++) {{
+                            var elem = elements[i];
+                            var tagName = elem.tagName.toUpperCase();
+                            
+                            if (tagName !== 'STYLE' && tagName !== 'SCRIPT') {{
+                                // 使用setProperty方法强制覆盖，包括内联样式
+                                elem.style.setProperty('background-color', '{bgColorHex}', 'important');
+                                elem.style.setProperty('color', '{fgColorHex}', 'important');
+                                
+                                // 特殊处理标题和强调元素
+                                if (tagName === 'H1' || tagName === 'H2' || tagName === 'H3' || 
+                                    tagName === 'H4' || tagName === 'H5' || tagName === 'H6' ||
+                                    tagName === 'STRONG' || tagName === 'B' || tagName === 'A') {{
+                                    elem.style.setProperty('color', '{accentColorHex}', 'important');
+                                }}
+                                
+                                // 对于非body元素，设置透明背景
+                                if (tagName !== 'BODY') {{
+                                    elem.style.setProperty('background-color', 'transparent', 'important');
+                                }}
+                                
+                                // 移除可能存在的内联颜色属性
+                                elem.removeAttribute('color');
+                                elem.removeAttribute('bgcolor');
+                            }}
+                        }}
+                        
+                        // 确保body元素的样式
+                        document.body.style.setProperty('background-color', '{bgColorHex}', 'important');
+                        document.body.style.setProperty('color', '{fgColorHex}', 'important');
+                        
+                        // 处理所有文本节点的父元素
+                        var walker = document.createTreeWalker(
+                            document.body,
+                            NodeFilter.SHOW_TEXT,
+                            null,
+                            false
+                        );
+                        var textNode;
+                        while (textNode = walker.nextNode()) {{
+                            if (textNode.parentElement) {{
+                                textNode.parentElement.style.setProperty('color', '{fgColorHex}', 'important');
+                            }}
+                        }}
+                    }})();
+                "
+
+                doc.InvokeScript("eval", New Object() {script})
+                Debug.WriteLine("DocumentCompleted中主题样式应用完成")
+            Else
+                Debug.WriteLine("跳过DocumentCompleted中的主题应用 - 不是邮件内容或Document为空")
+            End If
+        Catch ex As System.Exception
+            Debug.WriteLine($"WebBrowser_DocumentCompleted error: {ex.Message}")
+        End Try
+    End Sub
+
     ' 添加类级别的防重复调用变量
     Private isUpdatingMailList As Boolean = False
     Private lastUpdateTime As DateTime = DateTime.MinValue
@@ -4060,7 +4610,19 @@ Public Class MailThreadPane
                 lvMails?.Items.Clear()
                 Try
                     If suppressWebViewUpdate = 0 Then
-                        mailBrowser.DocumentText = "<html><body style='font-family: Segoe UI; padding: 20px; color: #666;'><div>请选择一封邮件</div></body></html>"
+                        ' 使用延迟机制确保主题正确设置
+                        Dim delayTimer As New System.Windows.Forms.Timer()
+                        delayTimer.Interval = 100
+                        AddHandler delayTimer.Tick, Sub(sender, e)
+                                                        delayTimer.Stop()
+                                                        delayTimer.Dispose()
+                                                        Try
+                                                            mailBrowser.DocumentText = GetThemedDefaultContent()
+                                                        Catch ex As System.Exception
+                                                            Debug.WriteLine($"延迟设置默认内容失败: {ex.Message}")
+                                                        End Try
+                                                    End Sub
+                        delayTimer.Start()
                     End If
                 Catch
                 End Try
@@ -4257,7 +4819,7 @@ Public Class MailThreadPane
                     itemCopy.ImageIndex = originalItem.ImageIndex
                     itemCopy.UseItemStyleForSubItems = originalItem.UseItemStyleForSubItems
 
-                    lvMails.Items.Add(itemCopy)
+                    AddItemWithTheme(lvMails, itemCopy)
                     If i < allMailItems.Count Then
                         mailItems.Add(allMailItems(i))
                     End If
@@ -4761,6 +5323,9 @@ Public Class MailThreadPane
                             End If
                         End With
 
+                        ' 应用主题到新创建的项目
+                        ApplyThemeToListViewItem(lvi)
+
                         allItems.Add(lvi)
                         tempMailItems.Add((0, entryId))
 
@@ -4779,6 +5344,9 @@ Public Class MailThreadPane
                         errorItem.SubItems.Add(DateTime.Now.ToString("yyyy-MM-dd HH:mm"))
                         errorItem.SubItems.Add("系统")
                         errorItem.SubItems.Add($"无法加载邮件: {singleEx.Message}")
+
+                        ' 应用主题到错误项目
+                        ApplyThemeToListViewItem(errorItem)
 
                         allItems.Add(errorItem)
                         tempMailItems.Add((0, currentMailEntryID))
@@ -5158,7 +5726,7 @@ UpdateUI:
                                        ' 对于少量邮件（通常是单邮件），克隆开销远大于收益
                                        If allItems.Count <= 5 Then
                                            ' 少量邮件：直接使用原始项目，避免克隆开销
-                                           lvMails.Items.AddRange(allItems.ToArray())
+                                           AddItemsWithTheme(lvMails, allItems.ToArray())
                                        Else
                                            ' 多量邮件：使用轻量级克隆，只复制必要属性
                                            Dim clones(allItems.Count - 1) As ListViewItem
@@ -5178,7 +5746,7 @@ UpdateUI:
                                                End If
                                                clones(i) = itemCopy
                                            Next
-                                           lvMails.Items.AddRange(clones)
+                                           AddItemsWithTheme(lvMails, clones)
                                        End If
                                        mailItems = tempMailItems
                                    End If
@@ -5297,7 +5865,7 @@ UpdateUI:
                         End Try
                     End With
 
-                    lvMails.Items.Add(lvi)
+                    AddItemWithTheme(lvMails, lvi)
                     mailItems.Add((0, entryId))
 
                     Debug.WriteLine($"处理单个邮件，耗时: {(DateTime.Now - startTime).TotalMilliseconds}ms")
@@ -5406,7 +5974,7 @@ UpdateUI:
                                 itemCopy.UseItemStyleForSubItems = originalItem.UseItemStyleForSubItems
                                 clones2.Add(itemCopy)
                             Next
-                            lvMails.Items.AddRange(clones2.ToArray())
+                            AddItemsWithTheme(lvMails, clones2.ToArray())
                             mailItems = tempMailItems
                         Finally
                             suppressWebViewUpdate = Math.Max(0, suppressWebViewUpdate - 1)
@@ -5570,7 +6138,7 @@ UpdateUI:
                             itemCopy.UseItemStyleForSubItems = originalItem.UseItemStyleForSubItems
                             clones3.Add(itemCopy)
                         Next
-                        lvMails.Items.AddRange(clones3.ToArray())
+                        AddItemsWithTheme(lvMails, clones3.ToArray())
                         mailItems = tempMailItems
 
                         ' 设置排序
@@ -5668,6 +6236,10 @@ UpdateUI:
         'iconFont = New Font(defaultFont, FontStyle.Regular)
         normalFont = New Font(defaultFont, FontStyle.Regular)
         highlightFont = New Font(defaultFont, FontStyle.Bold)  ' 使用 defaultFont 作为基础字体
+
+        ' 确保suppressWebViewUpdate初始状态为0
+        suppressWebViewUpdate = 0
+        Debug.WriteLine($"MailThreadPane构造函数: suppressWebViewUpdate重置为 {suppressWebViewUpdate}")
 
         ' 最后设置控件
         SetupControls()
@@ -5850,14 +6422,98 @@ UpdateUI:
     Private Sub SetItemHighlight(item As ListViewItem, isHighlighted As Boolean)
         If isHighlighted Then
             item.BackColor = highlightColor
+            item.ForeColor = SystemColors.HighlightText
             item.Font = highlightFont
             item.Selected = True
         Else
-            item.BackColor = SystemColors.Window
+            item.BackColor = currentBackColor  ' 使用当前主题背景色
+            item.ForeColor = currentForeColor  ' 使用当前主题文字色
             item.Font = normalFont
             item.Selected = False  ' 确保取消选中状态
         End If
     End Sub
+
+    ''' <summary>
+    ''' 应用当前主题到ListView项目
+    ''' </summary>
+    ''' <param name="item">要应用主题的ListView项目</param>
+    Private Sub ApplyThemeToListViewItem(item As ListViewItem)
+        If item IsNot Nothing Then
+            item.BackColor = currentBackColor
+            item.ForeColor = currentForeColor
+        End If
+    End Sub
+
+    ''' <summary>
+    ''' 应用主题到所有ListView控件的所有项目
+    ''' </summary>
+    Private Sub ApplyThemeToAllListViewItems()
+        Try
+            ' 应用到主邮件ListView
+            If lvMails IsNot Nothing Then
+                For Each item As ListViewItem In lvMails.Items
+                    ApplyThemeToListViewItem(item)
+                Next
+                Debug.WriteLine($"已应用主题到 {lvMails.Items.Count} 个主邮件ListView项目")
+            End If
+
+            ' 应用到任务列表
+            If taskList IsNot Nothing Then
+                For Each item As ListViewItem In taskList.Items
+                    ApplyThemeToListViewItem(item)
+                Next
+                Debug.WriteLine($"已应用主题到 {taskList.Items.Count} 个任务列表项目")
+            End If
+
+            ' 应用到邮件历史列表
+            If mailHistoryList IsNot Nothing Then
+                For Each item As ListViewItem In mailHistoryList.Items
+                    ApplyThemeToListViewItem(item)
+                Next
+                Debug.WriteLine($"已应用主题到 {mailHistoryList.Items.Count} 个邮件历史项目")
+            End If
+
+            ' 应用到待办邮件列表
+            If pendingMailList IsNot Nothing Then
+                For Each item As ListViewItem In pendingMailList.Items
+                    ApplyThemeToListViewItem(item)
+                Next
+                Debug.WriteLine($"已应用主题到 {pendingMailList.Items.Count} 个待办邮件项目")
+            End If
+
+        Catch ex As System.Exception
+            Debug.WriteLine($"ApplyThemeToAllListViewItems错误: {ex.Message}")
+        End Try
+    End Sub
+
+    ''' <summary>
+    ''' 添加项目到ListView并应用主题
+    ''' </summary>
+    ''' <param name="listView">目标ListView</param>
+    ''' <param name="item">要添加的项目</param>
+    Private Sub AddItemWithTheme(listView As ListView, item As ListViewItem)
+        If listView IsNot Nothing AndAlso item IsNot Nothing Then
+            ApplyThemeToListViewItem(item)
+            listView.Items.Add(item)
+        End If
+    End Sub
+
+    ''' <summary>
+    ''' 批量添加ListView项目并应用主题
+    ''' </summary>
+    ''' <param name="listView">目标ListView</param>
+    ''' <param name="items">要添加的项目数组</param>
+    Private Sub AddItemsWithTheme(listView As ListView, items As ListViewItem())
+        If listView IsNot Nothing AndAlso items IsNot Nothing Then
+            For Each item In items
+                If item IsNot Nothing Then
+                    ApplyThemeToListViewItem(item)
+                End If
+            Next
+            listView.Items.AddRange(items)
+        End If
+    End Sub
+
     Private Function GetPermanentEntryID(item As Object) As String
         Try
             Dim longEntryID As String = String.Empty
@@ -5929,9 +6585,12 @@ UpdateUI:
 
     Private Sub lvMails_SelectedIndexChanged(sender As Object, e As EventArgs)
         Try
+            Debug.WriteLine($"lvMails_SelectedIndexChanged: 选中项数量 = {lvMails.SelectedItems.Count}")
             If lvMails.SelectedItems.Count = 0 Then Return
 
             Dim mailId As String = ConvertEntryIDToString(lvMails.SelectedItems(0).Tag)
+            Debug.WriteLine($"lvMails_SelectedIndexChanged: 邮件ID = {mailId}")
+            Debug.WriteLine($"[邮件选择] 当前全局主题变量: 背景={globalThemeBackgroundColor}, 前景={globalThemeForegroundColor}, 更新时间={globalThemeLastUpdate}")
             If String.IsNullOrEmpty(mailId) Then Return
 
             ' 始终更新高亮，不受suppressWebViewUpdate影响
@@ -5941,10 +6600,16 @@ UpdateUI:
                 UpdateHighlightByEntryID(oldMailId, mailId)
 
                 ' 只有在非抑制模式下才加载WebView内容
+                Debug.WriteLine($"lvMails_SelectedIndexChanged: suppressWebViewUpdate = {suppressWebViewUpdate}")
                 If suppressWebViewUpdate = 0 Then
+                    Debug.WriteLine($"lvMails_SelectedIndexChanged: 开始加载WebView内容，邮件ID = {mailId}")
                     ' 使用 BeginInvoke 在事件回调结束后加载邮件内容
                     Me.BeginInvoke(New Action(Of String)(AddressOf LoadMailContentDeferred), mailId)
+                Else
+                    Debug.WriteLine($"lvMails_SelectedIndexChanged: WebView更新被抑制，suppressWebViewUpdate = {suppressWebViewUpdate}")
                 End If
+            Else
+                Debug.WriteLine($"lvMails_SelectedIndexChanged: 邮件ID相同，跳过更新")
             End If
         Catch ex As System.Exception
             Debug.WriteLine($"lvMails_SelectedIndexChanged error: {ex.Message}")
@@ -5988,22 +6653,45 @@ UpdateUI:
     ' 延迟加载邮件内容的方法，避免在事件回调中直接访问 Outlook 对象导致 COMException
     Private Async Sub LoadMailContentDeferred(mailId As String)
         Try
+            Debug.WriteLine($"LoadMailContentDeferred 开始执行，邮件ID: {mailId}")
+
             ' 抑制期间不进行 WebView 更新，避免联系人信息列表构造时触发刷新
             If suppressWebViewUpdate > 0 Then
-                Debug.WriteLine($"WebView更新被抑制，延迟重试 LoadMailContentDeferred: {mailId}")
+                Debug.WriteLine($"WebView更新被抑制，延迟重试 LoadMailContentDeferred: {mailId}, suppressWebViewUpdate = {suppressWebViewUpdate}")
                 Await Task.Delay(100)
                 If suppressWebViewUpdate = 0 AndAlso Me.IsHandleCreated Then
+                    Debug.WriteLine($"重试 LoadMailContentDeferred: {mailId}")
                     Me.BeginInvoke(Sub() LoadMailContentDeferred(mailId))
                 End If
                 Return
             End If
 
+            Debug.WriteLine($"开始获取邮件HTML内容，邮件ID: {mailId}")
             Dim html As String = Await Task.Run(Function() OutlookMyList.Handlers.MailHandler.DisplayMailContent(mailId))
+            Debug.WriteLine($"获取到HTML内容，长度: {If(html IsNot Nothing, html.Length, 0)}")
+
             If mailBrowser IsNot Nothing AndAlso mailBrowser.IsHandleCreated AndAlso suppressWebViewUpdate = 0 Then
+                Debug.WriteLine($"开始更新WebView内容，邮件ID: {mailId}")
                 mailBrowser.DocumentText = html
+                isDisplayingMailContent = True ' 标记当前正在显示邮件内容
+                Debug.WriteLine($"WebView内容已设置，邮件ID: {mailId}, isDisplayingMailContent = {isDisplayingMailContent}")
+
+                ' 验证WebView内容是否真的被设置
+                Dim actualContent = mailBrowser.DocumentText
+                Debug.WriteLine($"WebView实际内容长度: {If(actualContent IsNot Nothing, actualContent.Length, 0)}")
+                If actualContent IsNot Nothing AndAlso actualContent.Length > 0 Then
+                    Dim preview = If(actualContent.Length > 200, actualContent.Substring(0, 200), actualContent)
+                    Debug.WriteLine($"WebView内容预览: {preview}")
+                End If
+
+                ' 注意：不在这里立即应用主题，而是等待DocumentCompleted事件
+                Debug.WriteLine("等待WebView DocumentCompleted事件来应用主题")
+            Else
+                Debug.WriteLine($"跳过WebView更新 - mailBrowser IsNot Nothing: {mailBrowser IsNot Nothing}, IsHandleCreated: {If(mailBrowser IsNot Nothing, mailBrowser.IsHandleCreated, False)}, suppressWebViewUpdate: {suppressWebViewUpdate}")
             End If
         Catch ex As System.Exception
             Debug.WriteLine($"LoadMailContentDeferred error: {ex.Message}")
+            Debug.WriteLine($"LoadMailContentDeferred StackTrace: {ex.StackTrace}")
         End Try
     End Sub
 
@@ -6876,7 +7564,7 @@ UpdateUI:
                     item.SubItems.Add(If(String.IsNullOrEmpty(taskMail.Subject), "(无主题)", taskMail.Subject.ToString()))
                     item.SubItems.Add(dueDateText)
                     item.Tag = If(taskMail.EntryID IsNot Nothing, taskMail.EntryID.ToString(), "")
-                    item.BackColor = SystemColors.Window
+                    item.BackColor = currentBackColor  ' 使用当前主题背景色
                     pendingMailListView.Items.Add(item)
                 Next
             Else
@@ -6884,7 +7572,10 @@ UpdateUI:
                 Dim noTaskItem As New ListViewItem($"{senderName}待办邮件")
                 noTaskItem.SubItems.Add("该联系人没有标记为任务的邮件")
                 noTaskItem.SubItems.Add("")
-                noTaskItem.BackColor = Color.LightGray
+
+                ' 应用主题到无任务项目
+                ApplyThemeToListViewItem(noTaskItem)
+
                 pendingMailListView.Items.Add(noTaskItem)
             End If
 
@@ -6907,15 +7598,23 @@ UpdateUI:
                 Return
             End If
 
-            If sourceListView.SelectedItems.Count = 0 Then Return
+            Debug.WriteLine($"MailHistory_Click: ListView名称={sourceListView.Name}, 选中项数量={sourceListView.SelectedItems.Count}")
+            Debug.WriteLine($"MailHistory_Click: suppressWebViewUpdate当前值={suppressWebViewUpdate}")
+
+            If sourceListView.SelectedItems.Count = 0 Then 
+                Debug.WriteLine("MailHistory_Click: 没有选中项，退出")
+                Return
+            End If
 
             Dim item = sourceListView.SelectedItems(0)
             Dim entryId = TryCast(item.Tag, String)
 
             ' 只处理有EntryID的邮件项
             If Not String.IsNullOrEmpty(entryId) Then
-                Debug.WriteLine($"MailHistory_Click: 显示邮件 EntryID={entryId}")
+                Debug.WriteLine($"MailHistory_Click: 准备显示邮件 EntryID={entryId}")
+                Debug.WriteLine($"MailHistory_Click: 调用DisplayMailInWebView前，WebView当前内容长度={If(mailBrowser?.DocumentText?.Length, 0)}")
                 DisplayMailInWebView(entryId)
+                Debug.WriteLine($"MailHistory_Click: 调用DisplayMailInWebView后，WebView当前内容长度={If(mailBrowser?.DocumentText?.Length, 0)}")
             Else
                 Debug.WriteLine("MailHistory_Click: EntryID为空")
             End If
@@ -6952,66 +7651,35 @@ UpdateUI:
     ' 在WebView中显示邮件内容
     Private Sub DisplayMailInWebView(entryId As String)
         Try
-            Dim mailItem As Object = OutlookMyList.Utils.OutlookUtils.SafeGetItemFromID(entryId)
-            If mailItem Is Nothing Then Return
-
-            Dim displayContent As String = ""
-
-            If TypeOf mailItem Is Outlook.MailItem Then
-                Dim mail As Outlook.MailItem = DirectCast(mailItem, Outlook.MailItem)
-                Try
-                    Dim subject As String = If(String.IsNullOrEmpty(mail.Subject), "无主题", mail.Subject)
-                    Dim senderName As String = If(String.IsNullOrEmpty(mail.SenderName), "未知", mail.SenderName)
-                    Dim receivedTime As String = If(mail.ReceivedTime = DateTime.MinValue, "未知", mail.ReceivedTime.ToString("yyyy-MM-dd HH:mm:ss"))
-                    Dim htmlBody As String = If(String.IsNullOrEmpty(mail.HTMLBody), "", ReplaceTableTag(mail.HTMLBody))
-
-                    displayContent = $"<html><body style='font-family: Arial; padding: 10px; font-size:12px;'>" &
-                                   $"<h4 style='color: #0078d7;'>{subject}</h4>" &
-                                   $"<p><strong>发件人:</strong> {senderName}</p>" &
-                                   $"<p><strong>接收时间:</strong> {receivedTime}</p>" &
-                                   $"<hr>" &
-                                   $"<div>{htmlBody}</div>" &
-                                   "</body></html>"
-                Catch ex As System.Runtime.InteropServices.COMException
-                    Debug.WriteLine($"COM异常访问邮件属性: {ex.Message}")
-                    displayContent = "<html><body style='font-family: Arial; padding: 10px;'>无法访问邮件属性</body></html>"
-                Catch ex As System.Exception
-                    Debug.WriteLine($"访问邮件属性时发生异常: {ex.Message}")
-                    displayContent = "<html><body style='font-family: Arial; padding: 10px;'>无法访问邮件属性</body></html>"
-                End Try
-            ElseIf TypeOf mailItem Is Outlook.TaskItem Then
-                Dim task As Outlook.TaskItem = DirectCast(mailItem, Outlook.TaskItem)
-                Try
-                    Dim subject As String = If(String.IsNullOrEmpty(task.Subject), "无主题", task.Subject)
-                    Dim createdTime As String = If(task.CreationTime = DateTime.MinValue, "未知", task.CreationTime.ToString("yyyy-MM-dd HH:mm:ss"))
-                    Dim dueDate As String = If(task.DueDate = DateTime.MinValue, "无截止日期", task.DueDate.ToString("yyyy-MM-dd"))
-                    Dim status As String = task.Status.ToString()
-                    Dim htmlBody As String = If(String.IsNullOrEmpty(task.Body), "无内容", task.Body.Replace(vbCrLf, "<br>"))
-
-                    displayContent = $"<html><body style='font-family: Arial; padding: 10px; font-size:12px;'>" &
-                                   $"<h4 style='color: #d73502;'>[任务] {subject}</h4>" &
-                                   $"<p><strong>创建时间:</strong> {createdTime}</p>" &
-                                   $"<p><strong>截止日期:</strong> {dueDate}</p>" &
-                                   $"<p><strong>状态:</strong> {status}</p>" &
-                                   $"<hr>" &
-                                   $"<div>{htmlBody}</div>" &
-                                   "</body></html>"
-                Catch ex As System.Runtime.InteropServices.COMException
-                    Debug.WriteLine($"COM异常访问任务属性: {ex.Message}")
-                    displayContent = "<html><body style='font-family: Arial; padding: 10px;'>无法访问任务属性</body></html>"
-                Catch ex As System.Exception
-                    Debug.WriteLine($"访问任务属性时发生异常: {ex.Message}")
-                    displayContent = "<html><body style='font-family: Arial; padding: 10px;'>无法访问任务属性</body></html>"
-                End Try
+            Debug.WriteLine($"DisplayMailInWebView: 开始处理 EntryID={entryId}")
+            
+            ' 检查是否应该抑制WebView更新
+            If suppressWebViewUpdate > 0 Then
+                Debug.WriteLine($"DisplayMailInWebView: WebView更新被抑制，suppressWebViewUpdate = {suppressWebViewUpdate}")
+                Return
             End If
 
-            ' 在WebView中显示邮件内容
+            Debug.WriteLine($"DisplayMailInWebView: 调用MailHandler.DisplayMailContent")
+            ' 使用统一的MailHandler.DisplayMailContent方法来应用主题样式
+            Dim displayContent As String = OutlookMyList.Handlers.MailHandler.DisplayMailContent(entryId)
+            
+            Debug.WriteLine($"DisplayMailInWebView: MailHandler返回内容长度={If(displayContent?.Length, 0)}")
             If Not String.IsNullOrEmpty(displayContent) Then
+                ' 检查返回的HTML是否包含主题样式
+                Dim hasThemeStyles As Boolean = displayContent.Contains("background-color") AndAlso displayContent.Contains(globalThemeBackgroundColor)
+                Debug.WriteLine($"DisplayMailInWebView: HTML包含主题样式={hasThemeStyles}")
+                Debug.WriteLine($"DisplayMailInWebView: HTML前100字符={If(displayContent.Length > 100, displayContent.Substring(0, 100), displayContent)}")
+                
                 mailBrowser.DocumentText = displayContent
+                isDisplayingMailContent = True
+                Debug.WriteLine($"DisplayMailInWebView: 成功设置WebView内容，EntryID={entryId}, isDisplayingMailContent={isDisplayingMailContent}")
+            Else
+                Debug.WriteLine($"DisplayMailInWebView: MailHandler返回空内容，EntryID={entryId}")
             End If
 
         Catch ex As System.Exception
             Debug.WriteLine($"DisplayMailInWebView error: {ex.Message}")
+            Debug.WriteLine($"DisplayMailInWebView error stack: {ex.StackTrace}")
         End Try
     End Sub
 

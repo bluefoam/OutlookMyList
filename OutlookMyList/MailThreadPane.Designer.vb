@@ -1,4 +1,4 @@
-﻿<Global.Microsoft.VisualBasic.CompilerServices.DesignerGenerated()> _
+<Global.Microsoft.VisualBasic.CompilerServices.DesignerGenerated()> _
 Partial Class MailThreadPane
     Inherits System.Windows.Forms.UserControl
 
@@ -32,6 +32,7 @@ Partial Class MailThreadPane
     Private Sub InitializeComponent()
         components = New System.ComponentModel.Container()
         Me.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font
+        Me.BorderStyle = BorderStyle.FixedSingle
     End Sub
 
 End Class
