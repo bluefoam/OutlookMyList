@@ -109,6 +109,9 @@ Public Class MailThreadPane
     Private button2Visible As Boolean = False
     Private button3Visible As Boolean = False
 
+    ' 会话信息按钮引用，用于更新邮件数量显示
+    Private conversationInfoButton As Button
+
     ' 分页功能开关属性
     Public Property IsPaginationEnabled As Boolean
         Get
@@ -2341,11 +2344,17 @@ Public Class MailThreadPane
         Dim x As Integer = 10
         For i As Integer = 1 To 3
             Dim btn As New Button With {
-                .Text = If(i = 1, "联系人信息", If(i = 2, "会话信息", "邮件历史")),
+                .Text = If(i = 1, "联系人信息", If(i = 2, $"会话信息({lvMails.Items.Count})", "邮件历史")),
                 .Location = New Point(x, 2),
                 .Size = New Size(100, 15),
-                .Visible = True
+                .Visible = True,
+                .TextAlign = If(i = 2, ContentAlignment.MiddleLeft, ContentAlignment.MiddleCenter)
             }
+
+            ' 保存会话信息按钮的引用
+            If i = 2 Then
+                conversationInfoButton = btn
+            End If
 
             ' 为每个按钮添加双击隐藏功能
             Dim buttonIndex As Integer = i ' 捕获循环变量
@@ -4967,6 +4976,9 @@ Public Class MailThreadPane
                     paginationPanel.Visible = True
                 End If
             End If
+
+            ' 更新会话信息按钮标题
+            UpdateConversationInfoButtonTitle()
         Catch ex As System.Exception
             Debug.WriteLine($"UpdatePaginationUI error: {ex.Message}")
         End Try
@@ -5769,6 +5781,9 @@ UpdateUI:
                                ' 隐藏进度指示器
                                HideProgress()
 
+                               ' 更新会话信息按钮标题
+                               UpdateConversationInfoButtonTitle()
+
                                Debug.WriteLine($"完成异步加载会话邮件，总耗时: {(DateTime.Now - startTime).TotalMilliseconds}ms")
                            Finally
                                ' 确保EndUpdate被调用
@@ -5987,6 +6002,9 @@ UpdateUI:
 
                         ' 设置高亮并确保可见
                         UpdateHighlightByEntryID(String.Empty, currentMailEntryID)
+
+                        ' 更新会话信息按钮标题
+                        UpdateConversationInfoButtonTitle()
 
                         Debug.WriteLine($"完成加载会话邮件，总耗时: {(DateTime.Now - startTime).TotalMilliseconds}ms")
                     Finally
@@ -7773,7 +7791,7 @@ UpdateUI:
         If TypeOf control Is TreeView Then
             Return DirectCast(control, TreeView)
         End If
-        
+
         ' 递归查找子控件
         For Each childControl As Control In control.Controls
             Dim treeView As TreeView = FindTreeViewInControl(childControl)
@@ -7781,8 +7799,26 @@ UpdateUI:
                 Return treeView
             End If
         Next
-        
+
         Return Nothing
     End Function
+
+    ''' <summary>
+    ''' 更新会话信息按钮标题，显示当前邮件数量
+    ''' </summary>
+    Private Sub UpdateConversationInfoButtonTitle()
+        Try
+            If conversationInfoButton IsNot Nothing Then
+                If Me.InvokeRequired Then
+                    Me.BeginInvoke(Sub() UpdateConversationInfoButtonTitle())
+                Else
+                    conversationInfoButton.Text = $"会话信息({lvMails.Items.Count})"
+                    conversationInfoButton.TextAlign = ContentAlignment.MiddleLeft
+                End If
+            End If
+        Catch ex As System.Exception
+            Debug.WriteLine($"更新会话信息按钮标题时出错: {ex.Message}")
+        End Try
+    End Sub
 End Class
 
