@@ -6720,6 +6720,15 @@ UpdateUI:
                                    lvMails.VirtualListSize = allItems.Count
                                    lvMails.EndUpdate()
 
+                                   ' 修复鼠标显示问题 - 虚拟模式更新后
+                                   Try
+                                       MouseFix.FixControlCursor(Me)
+                                       MouseFix.ResetCursor()
+                                       Debug.WriteLine("虚拟模式邮件列表更新后应用鼠标修复")
+                                   Catch ex As System.Exception
+                                       Debug.WriteLine($"虚拟模式鼠标修复失败: {ex.Message}")
+                                   End Try
+
                                    Debug.WriteLine($"虚拟模式启用: 总项目={allItems.Count}，依赖RetrieveVirtualItem事件显示")
                                Else
                                    ' 非虚拟模式：优化的快速加载
@@ -6758,6 +6767,15 @@ UpdateUI:
                                    End If
 
                                    lvMails.EndUpdate()
+
+                                   ' 修复鼠标显示问题 - 非虚拟模式更新后
+                                   Try
+                                       MouseFix.FixControlCursor(Me)
+                                       MouseFix.ResetCursor()
+                                       Debug.WriteLine("非虚拟模式邮件列表更新后应用鼠标修复")
+                                   Catch ex As System.Exception
+                                       Debug.WriteLine($"非虚拟模式鼠标修复失败: {ex.Message}")
+                                   End Try
                                End If
 
                                ' 设置排序
@@ -6784,6 +6802,14 @@ UpdateUI:
                                If Not isVirtualMode Then
                                    Try
                                        lvMails.EndUpdate()
+                                       ' 修复鼠标显示问题 - Finally块中的EndUpdate后
+                                       Try
+                                           MouseFix.FixControlCursor(Me)
+                                           MouseFix.ResetCursor()
+                                           Debug.WriteLine("Finally块邮件列表更新后应用鼠标修复")
+                                       Catch mouseEx As System.Exception
+                                           Debug.WriteLine($"Finally块鼠标修复失败: {mouseEx.Message}")
+                                       End Try
                                    Catch
                                        ' 忽略重复EndUpdate错误
                                    End Try
@@ -7014,6 +7040,15 @@ UpdateUI:
             End Try
         Finally
             lvMails.EndUpdate()
+
+            ' 修复鼠标显示问题 - 同步版本邮件列表更新后
+            Try
+                MouseFix.FixControlCursor(Me)
+                MouseFix.ResetCursor()
+                Debug.WriteLine("同步版本邮件列表更新后应用鼠标修复")
+            Catch ex As System.Exception
+                Debug.WriteLine($"同步版本鼠标修复失败: {ex.Message}")
+            End Try
 
             ' 释放 COM 对象
             If conversation IsNot Nothing Then
@@ -8868,6 +8903,15 @@ UpdateUI:
         Finally
             If pendingMailListView IsNot Nothing Then
                 pendingMailListView.EndUpdate()
+                
+                ' 修复鼠标显示问题 - 待办邮件列表更新后
+                Try
+                    MouseFix.FixControlCursor(Me)
+                    MouseFix.ResetCursor()
+                    Debug.WriteLine("待办邮件列表更新后应用鼠标修复")
+                Catch ex As System.Exception
+                    Debug.WriteLine($"待办邮件列表鼠标修复失败: {ex.Message}")
+                End Try
             End If
         End Try
     End Sub

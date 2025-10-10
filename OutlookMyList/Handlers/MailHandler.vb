@@ -66,6 +66,14 @@ Namespace OutlookMyList.Handlers
             Debug.WriteLine($"UpdateHighlight error: {ex.Message}")
         Finally
             lvMails.EndUpdate()
+            
+            ' 修复鼠标显示问题 - UpdateHighlight后
+            Try
+                MouseFix.ResetCursor()
+                Debug.WriteLine("UpdateHighlight后应用鼠标修复")
+            Catch mouseEx As System.Exception
+                Debug.WriteLine($"UpdateHighlight鼠标修复失败: {mouseEx.Message}")
+            End Try
         End Try
     End Sub
 
