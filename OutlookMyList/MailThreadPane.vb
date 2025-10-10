@@ -955,6 +955,15 @@ Public Class MailThreadPane
             ' 添加分隔条移动后的事件处理
             AddHandler splitter1.SplitterMoved, AddressOf Splitter_Moved
             AddHandler splitter2.SplitterMoved, AddressOf Splitter_Moved
+            
+            ' 修复鼠标显示问题
+            Try
+                MouseFix.FixControlCursor(Me)
+                MouseFix.ResetCursor()
+                Debug.WriteLine("MailThreadPane鼠标修复已应用")
+            Catch mouseEx As Exception
+                Debug.WriteLine($"MailThreadPane鼠标修复时出错: {mouseEx.Message}")
+            End Try
         Catch ex As System.Exception
             Debug.WriteLine($"设置分隔位置出错: {ex.Message}")
         End Try

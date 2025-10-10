@@ -265,6 +265,7 @@
       <SubType>UserControl</SubType>
     </Compile>
     <Compile Include="Win32Helper.vb" />
+    <Compile Include="MouseFix.vb" />
     <Compile Include="TaskMonitor.vb" />
     <Compile Include="ThisAddIn.vb">
       <SubType>Code</SubType>

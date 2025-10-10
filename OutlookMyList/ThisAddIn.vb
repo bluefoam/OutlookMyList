@@ -1112,6 +1112,16 @@ Public Class ThisAddIn
         
         ' 初始化CommandBar右键菜单 - 延迟执行以确保Outlook完全加载
         System.Threading.Tasks.Task.Delay(2000).ContinueWith(Sub() InitializeCommandBars())
+        
+        ' 修复鼠标显示问题 - 延迟执行以确保UI完全加载
+        System.Threading.Tasks.Task.Delay(1000).ContinueWith(Sub() 
+            Try
+                MouseFix.ComprehensiveMouseFix()
+                Debug.WriteLine("鼠标修复已应用")
+            Catch ex As Exception
+                Debug.WriteLine($"应用鼠标修复时出错: {ex.Message}")
+            End Try
+        End Sub)
     End Sub
 
     Private Sub GlobalUnhandledExceptionHandler(sender As Object, e As UnhandledExceptionEventArgs)
