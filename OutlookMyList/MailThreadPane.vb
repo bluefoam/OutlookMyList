@@ -5415,6 +5415,15 @@ Public Class MailThreadPane
             Else
                 Debug.WriteLine("跳过DocumentCompleted中的主题应用 - 不是邮件内容或Document为空")
             End If
+
+            ' 修复鼠标显示问题 - WebBrowser文档加载完成后
+            Try
+                MouseFix.FixControlCursor(Me)
+                MouseFix.ResetCursor()
+                Debug.WriteLine("WebBrowser文档加载完成后应用鼠标修复")
+            Catch mouseEx As System.Exception
+                Debug.WriteLine($"WebBrowser文档加载完成鼠标修复失败: {mouseEx.Message}")
+            End Try
         Catch ex As System.Exception
             Debug.WriteLine($"WebBrowser_DocumentCompleted error: {ex.Message}")
         End Try
@@ -7666,6 +7675,15 @@ UpdateUI:
             Else
                 Debug.WriteLine($"lvMails_SelectedIndexChanged: 邮件ID相同，跳过更新")
             End If
+
+            ' 修复鼠标显示问题 - lvMails选中事件后
+            Try
+                MouseFix.FixControlCursor(Me)
+                MouseFix.ResetCursor()
+                Debug.WriteLine("lvMails选中事件后应用鼠标修复")
+            Catch mouseEx As System.Exception
+                Debug.WriteLine($"lvMails选中事件鼠标修复失败: {mouseEx.Message}")
+            End Try
         Catch ex As System.Exception
             Debug.WriteLine($"lvMails_SelectedIndexChanged error: {ex.Message}")
         End Try
@@ -7744,6 +7762,15 @@ UpdateUI:
             Else
                 Debug.WriteLine($"跳过WebView更新 - mailBrowser IsNot Nothing: {mailBrowser IsNot Nothing}, IsHandleCreated: {If(mailBrowser IsNot Nothing, mailBrowser.IsHandleCreated, False)}, suppressWebViewUpdate: {suppressWebViewUpdate}")
             End If
+
+            ' 修复鼠标显示问题 - WebView内容加载后
+            Try
+                MouseFix.FixControlCursor(Me)
+                MouseFix.ResetCursor()
+                Debug.WriteLine("WebView内容加载后应用鼠标修复")
+            Catch mouseEx As System.Exception
+                Debug.WriteLine($"WebView内容加载鼠标修复失败: {mouseEx.Message}")
+            End Try
         Catch ex As System.Exception
             Debug.WriteLine($"LoadMailContentDeferred error: {ex.Message}")
             Debug.WriteLine($"LoadMailContentDeferred StackTrace: {ex.StackTrace}")
@@ -7832,6 +7859,15 @@ UpdateUI:
                     End If
                 End If
             End If
+
+            ' 修复鼠标显示问题 - lvMails双击事件后
+            Try
+                MouseFix.FixControlCursor(Me)
+                MouseFix.ResetCursor()
+                Debug.WriteLine("lvMails双击事件后应用鼠标修复")
+            Catch mouseEx As System.Exception
+                Debug.WriteLine($"lvMails双击事件鼠标修复失败: {mouseEx.Message}")
+            End Try
         Catch ex As System.Exception
             Debug.WriteLine("lvMails_DoubleClick error: " & ex.Message)
         End Try
@@ -7916,6 +7952,15 @@ UpdateUI:
 
             ' 应用排序
             lvMails.ListViewItemSorter = New ListViewItemComparer(column, currentSortOrder)
+
+            ' 修复鼠标显示问题 - lvMails列点击事件后
+            Try
+                MouseFix.FixControlCursor(Me)
+                MouseFix.ResetCursor()
+                Debug.WriteLine("lvMails列点击事件后应用鼠标修复")
+            Catch mouseEx As System.Exception
+                Debug.WriteLine($"lvMails列点击事件鼠标修复失败: {mouseEx.Message}")
+            End Try
         Catch ex As System.Exception
             Debug.WriteLine("lvMails_ColumnClick error: " & ex.Message)
         End Try
