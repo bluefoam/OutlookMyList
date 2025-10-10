@@ -5,12 +5,21 @@ Imports System.Drawing
 Imports System.Threading.Tasks
 Imports Microsoft.Win32
 Imports System.Timers
+Imports System.IO
+' 添加DirectMergeHelper引用
+Imports OutlookMyList
 
 Public Class ThisAddIn
     Private WithEvents currentExplorer As Outlook.Explorer
     Private customTaskPane As Microsoft.Office.Tools.CustomTaskPane
     Private mailThreadPane As MailThreadPane
     Private taskMonitor As TaskMonitor
+
+    ' 兼容遗留引用：底部/嵌入面板占位字段（功能已移除，保持为 Nothing）
+    Private bottomPaneTaskPane As Microsoft.Office.Tools.CustomTaskPane = Nothing
+    Private bottomPane As BottomPane = Nothing
+    Private embeddedBottomPane As EmbeddedBottomPane = Nothing
+    Private embeddedPaneForm As Form = Nothing
 
     ' 公共属性用于访问MailThreadPane实例
     Public ReadOnly Property MailThreadPaneInstance As MailThreadPane
@@ -37,200 +46,412 @@ Public Class ThisAddIn
     Private currentTheme As Integer = -1
     Private WithEvents themeMonitorTimer As System.Timers.Timer
 
-    ' 添加底部面板相关变量
-    Private bottomPane As BottomPane
-    Private bottomPaneTaskPane As Microsoft.Office.Tools.CustomTaskPane
+    ' 全局缓存开关
+    Public Property CacheEnabled As Boolean = True
     
-    ' 添加嵌入式底部面板相关变量
-    Private embeddedBottomPane As EmbeddedBottomPane
-    Private embeddedPaneForm As Form
+    ' 添加CommandBar相关变量
+    Private mergeConversationButton As Microsoft.Office.Core.CommandBarButton
 
-    Private Sub ThisAddIn_Startup() Handles Me.Startup
-        ' 初始化Application对象已在Designer中完成
+    ' 已移除：底部面板功能
 
-        ' 获取当前Outlook主题
-        GetCurrentOutlookTheme()
+    ' 取消自定义Ribbon XML覆盖，改用Ribbon设计器以确保工具栏稳定显示
+    '（经典桌面版Outlook的右键菜单不稳定，故不使用IRibbonExtensibility返回XML）
 
-        ' 初始化Explorer窗口的任务窗格
-        currentExplorer = Me.Application.ActiveExplorer
-        InitializeMailPane()
-        InitializeBottomPane()
-        InitializeEmbeddedBottomPane()
+    ' 已移除：嵌入式底部面板功能
 
-        ' 初始化Inspectors集合并添加事件处理
-        inspectors = Me.Application.Inspectors
-        AddHandler inspectors.NewInspector, AddressOf Inspectors_NewInspector
-
-        ' 处理已经打开的Inspector窗口
-        For Each inspector As Outlook.Inspector In inspectors
-            Inspectors_NewInspector(inspector)
-        Next
-
-        ' 初始化任务监视器
-        taskMonitor = New TaskMonitor()
-        taskMonitor.Initialize()
-
-        ' 添加主题变化监听
-        AddHandler SystemEvents.UserPreferenceChanged, AddressOf SystemEvents_UserPreferenceChanged
-        
-        ' 初始化主题监听定时器 (已禁用)
-        ' InitializeThemeMonitor()
-    End Sub
-
-    Private Sub InitializeMailPane()
-        mailThreadPane = New MailThreadPane()
-        customTaskPane = Me.CustomTaskPanes.Add(mailThreadPane, "相关邮件v1.1")
-        customTaskPane.Width = 400
-        customTaskPane.Visible = True
-
-        ' 立即应用主题到新创建的MailThreadPane
-        ApplyThemeToControls()
-
-        ' 添加分页状态改变事件处理程序
-        AddHandler mailThreadPane.PaginationEnabledChanged, AddressOf MailThreadPane_PaginationEnabledChanged
-
-        ' 初始化后，检查是否有当前选中的邮件并加载内容
-        If currentExplorer IsNot Nothing AndAlso currentExplorer.Selection.Count > 0 Then
-            Dim currentItem As Object = currentExplorer.Selection(1)
-            If Not mailThreadPane.IsWebViewUpdateSuppressed Then
-                ' 延迟加载当前选中的邮件内容
-                mailThreadPane.BeginInvoke(Sub() UpdateMailContent(currentItem))
-            End If
-        End If
-    End Sub
-
-    Private Sub currentExplorer_SelectionChange() Handles currentExplorer.SelectionChange
-        If mailThreadPane Is Nothing OrElse customTaskPane Is Nothing OrElse Not customTaskPane.Visible Then Return
-
-        If currentExplorer.Selection.Count > 0 Then
-            Dim selection As Object = currentExplorer.Selection(1)
-            ' 在抑制期间跳过更新，避免 ContactInfoTree 构造时不断刷新 WebView
-            If Not mailThreadPane.IsWebViewUpdateSuppressed Then
-                ' 推迟处理，避免在事件回调中访问项目属性
-                mailThreadPane.BeginInvoke(Sub() UpdateMailContent(selection))
-            End If
-        End If
-    End Sub
-
-    Public Sub ToggleTaskPane()
-        If customTaskPane IsNot Nothing Then
-            customTaskPane.Visible = Not customTaskPane.Visible
-            ' 显示窗格时，获取当前选中项并更新内容
-            If customTaskPane.Visible Then
-                If currentExplorer IsNot Nothing AndAlso currentExplorer.Selection.Count > 0 Then
-                    Dim currentItem As Object = currentExplorer.Selection(1)
-                    If Not mailThreadPane.IsWebViewUpdateSuppressed Then
-                        ' 使用 BeginInvoke 延迟处理，避免在事件回调中访问项目属性
-                        mailThreadPane.BeginInvoke(Sub() UpdateMailContent(currentItem))
-                    End If
-                End If
-            End If
-        End If
-    End Sub
-
-    Public Sub UpdateMailList()
-        If mailThreadPane IsNot Nothing Then
-            If currentExplorer IsNot Nothing AndAlso currentExplorer.Selection.Count > 0 Then
-                Dim currentItem As Object = currentExplorer.Selection(1)
-                mailThreadPane.BeginInvoke(Sub() UpdateMailContent(currentItem))
-            End If
-        End If
-    End Sub
-
-    Private Sub InitializeBottomPane()
+    Private Sub InitializeCommandBars()
         Try
-            bottomPane = New BottomPane()
-            bottomPaneTaskPane = Me.CustomTaskPanes.Add(bottomPane, "插件面板")
-            ' 使用浮动模式，用户可以拖拽到主邮件区域下方
-            bottomPaneTaskPane.DockPosition = Microsoft.Office.Core.MsoCTPDockPosition.msoCTPDockPositionFloating
-            bottomPaneTaskPane.Height = 200
-            bottomPaneTaskPane.Width = 600
-            bottomPaneTaskPane.Visible = False ' 默认隐藏
+            LogInfo("初始化CommandBars: 开始")
+            ' 确保ActiveExplorer存在
+            If Me.Application.ActiveExplorer Is Nothing Then
+                Debug.WriteLine("ActiveExplorer为空，延迟初始化CommandBar")
+                ' 延迟初始化
+                System.Threading.Tasks.Task.Delay(1000).ContinueWith(Sub() InitializeCommandBars())
+                Return
+            End If
             
-            ' 尝试设置初始位置到屏幕中央偏下方
-            ' 注意：浮动面板的位置会由用户手动调整到合适位置
+            ' 获取Outlook的主窗口CommandBar
+            Dim commandBars As Microsoft.Office.Core.CommandBars = Me.Application.ActiveExplorer.CommandBars
+            
+            ' 调试：列出所有可用的CommandBar
+            Debug.WriteLine("=== 可用的CommandBar列表 ===")
+            LogInfo("列出当前可用的CommandBar")
+            For Each bar As Microsoft.Office.Core.CommandBar In commandBars
+                Try
+                    Debug.WriteLine($"CommandBar名称: '{bar.Name}', 类型: {bar.Type}, 可见: {bar.Visible}, 启用: {bar.Enabled}")
+                Catch ex As Exception
+                    Debug.WriteLine($"无法访问CommandBar属性: {ex.Message}")
+                End Try
+            Next
+            Debug.WriteLine("=== CommandBar列表结束 ===")
+            
+            ' 查找邮件列表的右键菜单 - 尝试多个可能的名称
+            Dim contextMenu As Microsoft.Office.Core.CommandBar = Nothing
+            Dim possibleNames As String() = {"Item", "Context Menu", "Mail Item", "MailItem", "Message", "List View", "Table", "Reading Pane", "Folder List"}
+            
+            For Each name As String In possibleNames
+                Try
+                    contextMenu = commandBars(name)
+                    Debug.WriteLine($"找到CommandBar: {name}")
+                    LogInfo($"通过名称找到CommandBar: {name}")
+                    Exit For
+                Catch
+                    Debug.WriteLine($"未找到CommandBar: {name}")
+                    LogInfo($"未找到CommandBar: {name}")
+                End Try
+            Next
+            
+            ' 如果还是没有找到，尝试通过类型查找
+            If contextMenu Is Nothing Then
+                Debug.WriteLine("=== 尝试通过类型查找CommandBar ===")
+                LogInfo("尝试通过类型查找CommandBar (msoBarTypePopup)")
+                For Each bar As Microsoft.Office.Core.CommandBar In commandBars
+                    Try
+                        If bar.Type = Microsoft.Office.Core.MsoBarType.msoBarTypePopup Then
+                            Debug.WriteLine($"发现弹出菜单: '{bar.Name}', 可见: {bar.Visible}")
+                            LogInfo($"发现弹出菜单: '{bar.Name}', 可见: {bar.Visible}")
+                            If bar.Name.ToLower().Contains("item") OrElse 
+                               bar.Name.ToLower().Contains("mail") OrElse
+                               bar.Name.ToLower().Contains("list") OrElse
+                               bar.Name.ToLower().Contains("context") Then
+                                contextMenu = bar
+                                Debug.WriteLine($"*** 通过类型找到CommandBar: '{bar.Name}' ***")
+                                LogInfo($"通过类型找到CommandBar: '{bar.Name}'")
+                                Exit For
+                            End If
+                        End If
+                    Catch ex As Exception
+                        Debug.WriteLine($"检查CommandBar时出错: {ex.Message}")
+                    End Try
+                Next
+                Debug.WriteLine("=== 类型查找结束 ===")
+                LogInfo("类型查找结束")
+            End If
+            
+            If contextMenu Is Nothing Then
+                Debug.WriteLine("*** 警告: 无法找到邮件项目上下文菜单 ***")
+                Debug.WriteLine("可能的原因: 1) Outlook版本不同 2) 需要等待用户操作 3) 权限问题")
+                LogInfo("无法找到邮件项目上下文菜单")
+                Return
+            Else
+                Debug.WriteLine($"*** 成功找到目标CommandBar: '{contextMenu.Name}' ***")
+                LogInfo($"成功找到目标CommandBar: '{contextMenu.Name}'")
+            End If
+            
+            ' 检查是否已经添加过菜单项
+            For Each control As Microsoft.Office.Core.CommandBarControl In contextMenu.Controls
+                If control.Tag = "MergeConversations" Then
+                    Debug.WriteLine("菜单项已存在，跳过添加")
+                    Return
+                End If
+            Next
+            
+            ' 添加合并会话菜单项
+            mergeConversationButton = CType(contextMenu.Controls.Add(Microsoft.Office.Core.MsoControlType.msoControlButton, , , , True), Microsoft.Office.Core.CommandBarButton)
+            mergeConversationButton.Caption = "合并自定义会话"
+            mergeConversationButton.Tag = "MergeConversations"
+            mergeConversationButton.FaceId = 1000 ' 使用一个通用图标
+            mergeConversationButton.Visible = True
+            mergeConversationButton.Enabled = True
+            mergeConversationButton.BeginGroup = True ' 添加分组分隔符
+            
+            ' 绑定点击事件
+            AddHandler mergeConversationButton.Click, AddressOf MergeConversationButton_Click
+            
+            Debug.WriteLine($"成功添加菜单项到CommandBar: {contextMenu.Name}")
+            LogInfo($"成功添加菜单项到CommandBar: {contextMenu.Name}")
+            
         Catch ex As Exception
-            ' 记录错误但不影响主程序运行
-            Debug.WriteLine("初始化底部面板失败: " & ex.Message)
+            Debug.WriteLine("初始化CommandBar失败: " & ex.Message)
+            Debug.WriteLine($"错误详情: {ex.StackTrace}")
+            LogException(ex, "InitializeCommandBars")
         End Try
     End Sub
 
-    Public Sub ToggleBottomPane()
-        If bottomPaneTaskPane IsNot Nothing Then
-            bottomPaneTaskPane.Visible = Not bottomPaneTaskPane.Visible
-        End If
+    ' Ribbon XML 回调复用：在上下文菜单中执行合并逻辑
+    Public Sub HandleMergeCustomConversation()
+        Try
+            ' 获取当前选中的邮件
+            If currentExplorer Is Nothing OrElse currentExplorer.Selection.Count = 0 Then
+                MessageBox.Show("请先选择要合并的邮件。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                Return
+            End If
+
+            ' 检查是否选择了多个邮件
+            If currentExplorer.Selection.Count < 2 Then
+                MessageBox.Show("请选择至少两个邮件进行合并。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                Return
+            End If
+
+            ' 确认操作
+            Dim result As System.Windows.Forms.DialogResult = MessageBox.Show(
+                $"确定要将选中的 {currentExplorer.Selection.Count} 个邮件合并到同一个自定义会话中吗？" & vbCrLf & vbCrLf &
+                "第一个选中的邮件的会话ID将作为目标会话ID。",
+                "确认合并会话",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question)
+
+            If result = System.Windows.Forms.DialogResult.No Then
+                Return
+            End If
+
+            ' 执行合并操作
+            Dim targetConversationId As String = ""
+            Dim processedCount As Integer = 0
+            Dim errorCount As Integer = 0
+
+            ' 首先检查所有选中的邮件，查找是否有任何一个已存在自定义会话ID
+            Dim foundCustomId As Boolean = False
+            For i As Integer = 1 To currentExplorer.Selection.Count
+                Try
+                    Dim mailItem As Object = currentExplorer.Selection(i)
+                    If TypeOf mailItem Is Outlook.MailItem OrElse TypeOf mailItem Is Outlook.AppointmentItem OrElse TypeOf mailItem Is Outlook.MeetingItem Then
+                        Dim customId As String = mailThreadPane.ReadCustomConversationIdFromItem(mailItem)
+                        If Not String.IsNullOrEmpty(customId) Then
+                            targetConversationId = customId
+                            foundCustomId = True
+                            Exit For
+                        End If
+                    End If
+                Catch ex As Exception
+                    Debug.WriteLine($"检查邮件 {i} 的自定义会话ID时出错: {ex.Message}")
+                End Try
+            Next
+
+            ' 如果没有找到任何自定义会话ID，则使用第一个邮件的原始ConversationID
+            If Not foundCustomId Then
+                Dim firstMailItem As Object = currentExplorer.Selection(1)
+                If TypeOf firstMailItem Is Outlook.MailItem OrElse TypeOf firstMailItem Is Outlook.AppointmentItem OrElse TypeOf firstMailItem Is Outlook.MeetingItem Then
+                    If TypeOf firstMailItem Is Outlook.MailItem Then
+                        targetConversationId = DirectCast(firstMailItem, Outlook.MailItem).ConversationID
+                    ElseIf TypeOf firstMailItem Is Outlook.AppointmentItem Then
+                        targetConversationId = DirectCast(firstMailItem, Outlook.AppointmentItem).ConversationID
+                    ElseIf TypeOf firstMailItem Is Outlook.MeetingItem Then
+                        targetConversationId = DirectCast(firstMailItem, Outlook.MeetingItem).ConversationID
+                    End If
+                End If
+            End If
+
+            If String.IsNullOrEmpty(targetConversationId) Then
+                MessageBox.Show("无法确定目标会话ID。", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                Return
+            End If
+
+            ' 显示进度
+            mailThreadPane.ShowProgress("正在合并会话...", currentExplorer.Selection.Count)
+
+            ' 执行合并操作
+            For i As Integer = 1 To currentExplorer.Selection.Count
+                Try
+                    Dim mailItem As Object = currentExplorer.Selection(i)
+
+                    ' 更新进度
+                    mailThreadPane.UpdateProgress(i, $"正在处理第 {i} 个邮件...")
+                    System.Windows.Forms.Application.DoEvents() ' 允许UI更新
+
+                    ' 检查是否为支持的邮件类型
+                    If TypeOf mailItem Is Outlook.MailItem OrElse TypeOf mailItem Is Outlook.AppointmentItem OrElse TypeOf mailItem Is Outlook.MeetingItem Then
+                        Dim entryId As String = ""
+
+                        ' 获取EntryID
+                        If TypeOf mailItem Is Outlook.MailItem Then
+                            entryId = DirectCast(mailItem, Outlook.MailItem).EntryID
+                        ElseIf TypeOf mailItem Is Outlook.AppointmentItem Then
+                            entryId = DirectCast(mailItem, Outlook.AppointmentItem).EntryID
+                        ElseIf TypeOf mailItem Is Outlook.MeetingItem Then
+                            entryId = DirectCast(mailItem, Outlook.MeetingItem).EntryID
+                        End If
+
+                        ' 设置自定义会话ID
+                        If Not String.IsNullOrEmpty(entryId) Then
+                            ' 获取 StoreID 以确保跨邮箱检索
+                            Dim storeId As String = Nothing
+                            Try
+                                Dim parentFolder As Outlook.MAPIFolder = Nothing
+                                If TypeOf mailItem Is Outlook.MailItem Then
+                                    parentFolder = TryCast(DirectCast(mailItem, Outlook.MailItem).Parent, Outlook.MAPIFolder)
+                                ElseIf TypeOf mailItem Is Outlook.AppointmentItem Then
+                                    parentFolder = TryCast(DirectCast(mailItem, Outlook.AppointmentItem).Parent, Outlook.MAPIFolder)
+                                ElseIf TypeOf mailItem Is Outlook.MeetingItem Then
+                                    parentFolder = TryCast(DirectCast(mailItem, Outlook.MeetingItem).Parent, Outlook.MAPIFolder)
+                                End If
+                                If parentFolder IsNot Nothing AndAlso parentFolder.Store IsNot Nothing Then
+                                    storeId = parentFolder.Store.StoreID
+                                End If
+                            Catch
+                            End Try
+
+                            Debug.WriteLine($"尝试设置邮件 {i} 的自定义会话ID: entryId={entryId}, targetConversationId={targetConversationId}")
+                            Dim setResult = mailThreadPane.SetCustomConversationIdByEntryID(entryId, targetConversationId, storeId)
+                            If setResult Then
+                                Debug.WriteLine($"成功设置邮件 {i} 的自定义会话ID")
+                                processedCount += 1
+                            Else
+                                Debug.WriteLine($"设置邮件 {i} 的自定义会话ID失败")
+                                errorCount += 1
+                            End If
+                        Else
+                            errorCount += 1
+                        End If
+                    Else
+                        errorCount += 1
+                    End If
+
+                Catch ex As Exception
+                    errorCount += 1
+                    Debug.WriteLine($"处理邮件 {i} 时出错: {ex.Message}")
+                End Try
+            Next
+
+            ' 隐藏进度条
+            mailThreadPane.HideProgress()
+
+            ' 显示结果
+            Dim message As String = $"合并完成！" & vbCrLf &
+                                  $"成功处理: {processedCount} 个邮件" & vbCrLf &
+                                  $"失败: {errorCount} 个邮件"
+
+            If errorCount > 0 Then
+                message &= vbCrLf & vbCrLf & "部分邮件可能由于权限或其他原因无法修改。"
+            End If
+
+            MessageBox.Show(message, "合并结果", MessageBoxButtons.OK, 
+                          If(errorCount = 0, MessageBoxIcon.Information, MessageBoxIcon.Warning))
+
+            ' 强制刷新邮件列表
+            If mailThreadPane IsNot Nothing AndAlso currentExplorer IsNot Nothing AndAlso currentExplorer.Selection.Count > 0 Then
+                Dim currentItem As Object = currentExplorer.Selection(1)
+                If TypeOf currentItem Is Outlook.MailItem Then
+                    Dim currentMail As Outlook.MailItem = CType(currentItem, Outlook.MailItem)
+                    mailThreadPane.UpdateMailList(targetConversationId, currentMail.EntryID)
+                ElseIf TypeOf currentItem Is Outlook.AppointmentItem Then
+                    Dim currentAppt As Outlook.AppointmentItem = CType(currentItem, Outlook.AppointmentItem)
+                    mailThreadPane.UpdateMailList(targetConversationId, currentAppt.EntryID)
+                ElseIf TypeOf currentItem Is Outlook.MeetingItem Then
+                    Dim currentMeeting As Outlook.MeetingItem = CType(currentItem, Outlook.MeetingItem)
+                    mailThreadPane.UpdateMailList(targetConversationId, currentMeeting.EntryID)
+                End If
+            End If
+
+        Catch ex As Exception
+            MessageBox.Show($"合并会话时发生错误: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            Debug.WriteLine($"HandleMergeCustomConversation错误: {ex.Message}")
+            Try
+                LogException(ex, "HandleMergeCustomConversation")
+            Catch
+            End Try
+        End Try
     End Sub
 
-    Private Sub InitializeEmbeddedBottomPane()
+    Private Sub MergeConversationButton_Click(ByVal Ctrl As Microsoft.Office.Core.CommandBarButton, ByRef CancelDefault As Boolean)
         Try
-            embeddedBottomPane = New EmbeddedBottomPane()
+            ' 获取当前选中的邮件
+            If currentExplorer Is Nothing OrElse currentExplorer.Selection.Count = 0 Then
+                MessageBox.Show("请先选择要合并的邮件。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                Return
+            End If
             
-            ' 创建一个窗体来承载嵌入式面板
-            embeddedPaneForm = New Form()
-            embeddedPaneForm.FormBorderStyle = FormBorderStyle.None
-            embeddedPaneForm.ShowInTaskbar = False
-            embeddedPaneForm.TopMost = False
-            embeddedPaneForm.Controls.Add(embeddedBottomPane)
-            embeddedBottomPane.Dock = DockStyle.Fill
+            ' 检查是否选择了多个邮件
+            If currentExplorer.Selection.Count < 2 Then
+                MessageBox.Show("请选择至少两个邮件进行合并。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                Return
+            End If
             
-            ' 初始时隐藏
-            embeddedPaneForm.Visible = False
+            ' 确认操作
+            Dim dialogResult As System.Windows.Forms.DialogResult = MessageBox.Show(
+                $"确定要将选中的 {currentExplorer.Selection.Count} 个邮件合并到同一个自定义会话中吗？" & vbCrLf & vbCrLf &
+                "系统将优先使用已有的自定义会话ID，如果没有则使用第一个邮件的会话ID。",
+                "确认合并会话",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question)
             
+            If dialogResult <> System.Windows.Forms.DialogResult.Yes Then
+                Return
+            End If
+            
+            ' 显示进度
+            mailThreadPane.ShowProgress("正在合并会话...", currentExplorer.Selection.Count)
+            
+            ' 使用新的DirectMergeHelper类执行合并操作
+            Dim mergeInfo = OutlookMyList.DirectMergeHelper.MergeConversation(currentExplorer.Selection)
+            
+            ' 隐藏进度条
+            mailThreadPane.HideProgress()
+            
+            ' 显示结果
+            If mergeInfo.success Then
+                Dim message As String = $"合并完成！" & vbCrLf &
+                                      $"成功处理: {mergeInfo.processedCount} 个邮件" & vbCrLf &
+                                      $"失败: {mergeInfo.errorCount} 个邮件"
+    
+                If mergeInfo.errorCount > 0 Then
+                    message &= vbCrLf & vbCrLf & "部分邮件可能由于权限或其他原因无法修改。"
+                End If
+    
+                MessageBox.Show(message, "合并结果", MessageBoxButtons.OK, 
+                              If(mergeInfo.errorCount = 0, MessageBoxIcon.Information, MessageBoxIcon.Warning))
+                
+                ' 强制刷新邮件列表
+                If Not String.IsNullOrEmpty(mergeInfo.targetConversationId) AndAlso currentExplorer.Selection.Count > 0 Then
+                    Dim currentItem As Object = currentExplorer.Selection(1)
+                    Dim entryId As String = String.Empty
+                    
+                    If TypeOf currentItem Is Outlook.MailItem Then
+                        entryId = DirectCast(currentItem, Outlook.MailItem).EntryID
+                    ElseIf TypeOf currentItem Is Outlook.AppointmentItem Then
+                        entryId = DirectCast(currentItem, Outlook.AppointmentItem).EntryID
+                    ElseIf TypeOf currentItem Is Outlook.MeetingItem Then
+                        entryId = DirectCast(currentItem, Outlook.MeetingItem).EntryID
+                    End If
+                    
+                    If Not String.IsNullOrEmpty(entryId) Then
+                        mailThreadPane.UpdateMailList(mergeInfo.targetConversationId, entryId)
+                    End If
+                End If
+            Else
+                MessageBox.Show("合并操作失败，无法确定目标会话ID。", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            End If
         Catch ex As Exception
-            Debug.WriteLine("初始化嵌入式底部面板失败: " & ex.Message)
+            ' 记录错误并显示错误消息
+            Debug.WriteLine($"MergeConversationButton_Click错误: {ex.Message}")
+            MessageBox.Show($"合并会话时发生错误: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            
+            ' 隐藏进度条（如果已显示）
+            Try
+                mailThreadPane.HideProgress()
+            Catch
+                ' 忽略隐藏进度条时的错误
+            End Try
         End Try
     End Sub
 
     Public Sub ToggleEmbeddedBottomPane()
-        Try
-            If embeddedBottomPane Is Nothing OrElse embeddedPaneForm Is Nothing Then
-                Return
-            End If
-
-            If embeddedPaneForm.Visible Then
-                ' 隐藏面板
-                embeddedPaneForm.Visible = False
-                embeddedBottomPane.UpdateStatus("已隐藏")
-            Else
-                ' 显示面板并尝试嵌入
-                If embeddedBottomPane.TryEmbedInOutlook() Then
-                    embeddedPaneForm.Visible = True
-                    embeddedBottomPane.UpdateStatus("已嵌入到Outlook阅读窗格下方")
-                Else
-                    ' 如果嵌入失败，显示为普通窗口
-                    embeddedPaneForm.WindowState = FormWindowState.Normal
-                    embeddedPaneForm.Size = New Size(600, 150)
-                    embeddedPaneForm.StartPosition = FormStartPosition.CenterScreen
-                    embeddedPaneForm.Visible = True
-                    embeddedBottomPane.UpdateStatus("嵌入失败，显示为独立窗口")
-                End If
-            End If
-        Catch ex As Exception
-            Debug.WriteLine("切换嵌入式底部面板失败: " & ex.Message)
-        End Try
+        ' 功能已移除：不执行任何操作
+        Return
     End Sub
 
     Public Sub MinimizeBottomPane()
-        If bottomPane IsNot Nothing Then
-            bottomPane.ToggleMinimize()
-        End If
+        ' 功能已移除：不执行任何操作
     End Sub
 
     Public ReadOnly Property BottomPaneInstance As BottomPane
         Get
-            Return bottomPane
+            ' 功能已移除：返回 Nothing
+            Return Nothing
         End Get
     End Property
 
     Public ReadOnly Property IsBottomPaneVisible As Boolean
         Get
-            Return bottomPaneTaskPane IsNot Nothing AndAlso bottomPaneTaskPane.Visible
+            ' 功能已移除：始终返回 False
+            Return False
         End Get
     End Property
 
     Public ReadOnly Property IsEmbeddedBottomPaneVisible As Boolean
         Get
-            Return embeddedPaneForm IsNot Nothing AndAlso embeddedPaneForm.Visible
+            ' 功能已移除：始终返回 False
+            Return False
         End Get
     End Property
 
@@ -254,8 +475,41 @@ Public Class ThisAddIn
             themeMonitorTimer.Stop()
             themeMonitorTimer.Dispose()
             themeMonitorTimer = Nothing
-            Debug.WriteLine("主题监听器已停止")
         End If
+        
+        ' 清理CommandBar
+        Try
+            If mergeConversationButton IsNot Nothing Then
+                RemoveHandler mergeConversationButton.Click, AddressOf MergeConversationButton_Click
+                mergeConversationButton.Delete()
+                mergeConversationButton = Nothing
+            End If
+            
+            ' 清理所有带有我们标签的控件
+            If Me.Application.ActiveExplorer IsNot Nothing Then
+                Dim commandBars As Microsoft.Office.Core.CommandBars = Me.Application.ActiveExplorer.CommandBars
+                For Each bar As Microsoft.Office.Core.CommandBar In commandBars
+                    Try
+                        Dim controlsToDelete As New List(Of Microsoft.Office.Core.CommandBarControl)
+                        For Each control As Microsoft.Office.Core.CommandBarControl In bar.Controls
+                            If control.Tag = "MergeConversations" Then
+                                controlsToDelete.Add(control)
+                            End If
+                        Next
+                        
+                        For Each control In controlsToDelete
+                            control.Delete()
+                        Next
+                    Catch
+                        ' 忽略清理错误
+                    End Try
+                Next
+            End If
+        Catch ex As Exception
+            Debug.WriteLine("清理CommandBar时出错: " & ex.Message)
+        End Try
+        
+        Debug.WriteLine("主题监听器已停止")
 
         ' 清理所有Inspector任务窗格
         For Each taskPane In inspectorTaskPanes.Values
@@ -584,9 +838,12 @@ Public Class ThisAddIn
                         For Each keyName As String In keyNames
                             Dim value As Object = key.GetValue(keyName)
                             If value IsNot Nothing Then
-                                themeValue = Convert.ToInt32(value)
-                                Debug.WriteLine($"找到主题值: {keyName} = {themeValue}")
-                                Exit For
+                                themeValue = SafeParseTheme(value)
+                                If themeValue <> -1 Then
+                                    Debug.WriteLine($"找到主题值: {keyName} = {themeValue}")
+                                    LogInfo($"Outlook主题解析: {keyName} = {themeValue}")
+                                    Exit For
+                                End If
                             End If
                         Next
                         
@@ -810,13 +1067,209 @@ Public Class ThisAddIn
     ' 处理MailThreadPane分页状态改变事件
     Private Sub MailThreadPane_PaginationEnabledChanged(enabled As Boolean)
         Try
-            ' 更新Ribbon按钮状态
-            Dim ribbon As OutlookRibbon = TryCast(Me.Application.ActiveExplorer()?.CommandBars.GetRibbonX(), OutlookRibbon)
-            If ribbon IsNot Nothing Then
-                ribbon.UpdatePaginationButtonState(enabled)
+            ' 使用 Globals.Ribbons 访问设计器生成的 Ribbon 实例
+            If Globals.Ribbons IsNot Nothing AndAlso Globals.Ribbons.Ribbon1 IsNot Nothing Then
+                Globals.Ribbons.Ribbon1.UpdatePaginationButtonState(enabled)
             End If
         Catch ex As Exception
             Debug.WriteLine($"Error updating pagination button state: {ex.Message}")
         End Try
     End Sub
+
+    ' 添加缺失的方法
+    Private Sub ThisAddIn_Startup() Handles Me.Startup
+        ' 初始化Application对象已在Designer中完成
+
+        ' 注册全局异常处理，避免未处理异常弹窗，并记录日志
+        AddHandler AppDomain.CurrentDomain.UnhandledException, AddressOf GlobalUnhandledExceptionHandler
+        AddHandler System.Windows.Forms.Application.ThreadException, AddressOf GlobalThreadExceptionHandler
+
+        ' 从注册表加载缓存开关
+        LoadCacheEnabledFromRegistry()
+
+        ' 获取当前Outlook主题
+        GetCurrentOutlookTheme()
+
+        ' 初始化Explorer窗口的任务窗格
+        currentExplorer = Me.Application.ActiveExplorer
+        InitializeMailPane()
+
+        ' 初始化Inspectors集合并添加事件处理
+        inspectors = Me.Application.Inspectors
+        AddHandler inspectors.NewInspector, AddressOf Inspectors_NewInspector
+
+        ' 处理已经打开的Inspector窗口
+        For Each inspector As Outlook.Inspector In inspectors
+            Inspectors_NewInspector(inspector)
+        Next
+
+        ' 初始化任务监视器
+        taskMonitor = New TaskMonitor()
+        taskMonitor.Initialize()
+
+        ' 添加主题变化监听
+        AddHandler SystemEvents.UserPreferenceChanged, AddressOf SystemEvents_UserPreferenceChanged
+        
+        ' 初始化CommandBar右键菜单 - 延迟执行以确保Outlook完全加载
+        System.Threading.Tasks.Task.Delay(2000).ContinueWith(Sub() InitializeCommandBars())
+    End Sub
+
+    Private Sub GlobalUnhandledExceptionHandler(sender As Object, e As UnhandledExceptionEventArgs)
+        Try
+            Dim ex = TryCast(e.ExceptionObject, Exception)
+            LogException(ex, "Unhandled")
+        Catch
+        End Try
+    End Sub
+
+    Private Sub GlobalThreadExceptionHandler(sender As Object, e As Threading.ThreadExceptionEventArgs)
+        Try
+            LogException(e.Exception, "Thread")
+        Catch
+        End Try
+    End Sub
+
+    Public Sub LogException(ex As Exception, prefix As String)
+        Try
+            Dim dir As String = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OutlookMyList")
+            System.IO.Directory.CreateDirectory(dir)
+            Dim logPath As String = System.IO.Path.Combine(dir, "error.log")
+            System.IO.File.AppendAllText(logPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} [{prefix}] {ex?.ToString()}{Environment.NewLine}")
+            Debug.WriteLine($"[{prefix}] {ex?.Message}")
+        Catch
+        End Try
+    End Sub
+
+    Public Sub LogInfo(message As String)
+        Try
+            Dim dir As String = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OutlookMyList")
+            System.IO.Directory.CreateDirectory(dir)
+            Dim logPath As String = System.IO.Path.Combine(dir, "error.log")
+            System.IO.File.AppendAllText(logPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} [Info] {message}{Environment.NewLine}")
+            Debug.WriteLine(message)
+        Catch
+        End Try
+    End Sub
+
+    Private Function SafeParseTheme(valueObj As Object) As Integer
+        Try
+            If valueObj Is Nothing Then Return -1
+            If TypeOf valueObj Is Integer Then
+                Return DirectCast(valueObj, Integer)
+            ElseIf TypeOf valueObj Is String Then
+                Dim s As String = DirectCast(valueObj, String)
+                Dim tmp As Integer
+                If Integer.TryParse(s, tmp) Then
+                    Return tmp
+                End If
+                Select Case s.Trim().ToLower()
+                    Case "colorful", "light", "white"
+                        Return 0
+                    Case "darkgray", "dark gray"
+                        Return 1
+                    Case "black", "dark"
+                        Return 2
+                    Case Else
+                        Return -1
+                End Select
+            Else
+                Return Convert.ToInt32(valueObj)
+            End If
+        Catch
+            Return -1
+        End Try
+    End Function
+
+    Private Sub currentExplorer_SelectionChange() Handles currentExplorer.SelectionChange
+        If mailThreadPane Is Nothing OrElse customTaskPane Is Nothing OrElse Not customTaskPane.Visible Then Return
+
+        If currentExplorer.Selection.Count > 0 Then
+            Dim selection As Object = currentExplorer.Selection(1)
+            ' 在抑制期间跳过更新，避免 ContactInfoTree 构造时不断刷新 WebView
+            If Not mailThreadPane.IsWebViewUpdateSuppressed Then
+                ' 推迟处理，避免在事件回调中访问项目属性
+                mailThreadPane.BeginInvoke(Sub() UpdateMailContent(selection))
+            End If
+        End If
+
+        ' 同步更新Ribbon中"合并自定义会话"按钮的启用状态（选择数≥2启用）
+        Try
+            Dim enabled As Boolean = (currentExplorer.Selection.Count >= 2)
+            If Globals.Ribbons IsNot Nothing AndAlso Globals.Ribbons.Ribbon1 IsNot Nothing Then
+                Globals.Ribbons.Ribbon1.UpdateMergeButtonState(enabled)
+            End If
+        Catch ex As Exception
+            Debug.WriteLine($"Error updating merge button state: {ex.Message}")
+        End Try
+    End Sub
+
+    Private Sub InitializeMailPane()
+        mailThreadPane = New MailThreadPane()
+        customTaskPane = Me.CustomTaskPanes.Add(mailThreadPane, "相关邮件v1.1")
+        customTaskPane.Width = 400
+        customTaskPane.Visible = True
+
+        ' 立即应用主题到新创建的MailThreadPane
+        ApplyThemeToControls()
+
+        ' 添加分页状态改变事件处理程序
+        AddHandler mailThreadPane.PaginationEnabledChanged, AddressOf MailThreadPane_PaginationEnabledChanged
+
+        ' 初始化后，检查是否有当前选中的邮件并加载内容
+        If currentExplorer IsNot Nothing AndAlso currentExplorer.Selection.Count > 0 Then
+            Dim currentItem As Object = currentExplorer.Selection(1)
+            If Not mailThreadPane.IsWebViewUpdateSuppressed Then
+                ' 延迟加载当前选中的邮件内容
+                mailThreadPane.BeginInvoke(Sub() UpdateMailContent(currentItem))
+            End If
+        End If
+    End Sub
+
+    Private Sub LoadCacheEnabledFromRegistry()
+        Try
+            Dim basePath As String = "Software\\OutlookMyList\\Settings"
+            Using key As RegistryKey = Registry.CurrentUser.OpenSubKey(basePath)
+                If key IsNot Nothing Then
+                    Dim value As Object = key.GetValue("CacheEnabled", True)
+                    Dim enabled As Boolean = True
+                    If TypeOf value Is Integer Then
+                        enabled = (DirectCast(value, Integer) <> 0)
+                    ElseIf TypeOf value Is String Then
+                        enabled = Boolean.TryParse(DirectCast(value, String), enabled)
+                    ElseIf TypeOf value Is Boolean Then
+                        enabled = DirectCast(value, Boolean)
+                    End If
+                    CacheEnabled = enabled
+                    LogInfo($"加载缓存开关: {CacheEnabled}")
+                Else
+                    CacheEnabled = True
+                End If
+            End Using
+        Catch ex As Exception
+            Debug.WriteLine($"加载缓存开关失败: {ex.Message}")
+            CacheEnabled = True
+        End Try
+    End Sub
+
+    Public Sub ToggleTaskPane()
+        Try
+            If bottomPaneTaskPane IsNot Nothing Then
+                bottomPaneTaskPane.Visible = Not bottomPaneTaskPane.Visible
+            End If
+        Catch ex As System.Exception
+             LogException(ex, "ToggleTaskPane")
+         End Try
+    End Sub
+
+    Public Sub SaveCacheEnabledToRegistry(enabled As Boolean)
+        Try
+            Dim key As Microsoft.Win32.RegistryKey = Microsoft.Win32.Registry.CurrentUser.CreateSubKey("Software\OutlookMyList")
+            key.SetValue("CacheEnabled", enabled)
+            key.Close()
+            CacheEnabled = enabled
+        Catch ex As System.Exception
+             LogException(ex, "SaveCacheEnabledToRegistry")
+         End Try
+    End Sub
+
 End Class

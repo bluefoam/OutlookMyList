@@ -1,4 +1,4 @@
-﻿Imports System.Windows.Forms
+Imports System.Windows.Forms
 Imports System.Drawing
 Imports System.Diagnostics
 Imports System.Net.Http
@@ -23,7 +23,7 @@ Public Class MailThreadPane
     Private Shadows ReadOnly defaultFont As Font
     Private ReadOnly highlightFont As Font
     Private ReadOnly normalFont As Font
-    Private ReadOnly highlightColor As Color = SystemColors.Highlight
+    Private ReadOnly highlightColor As Color = Color.FromArgb(230, 240, 255)
 
     ' MessageClass映射缓存 - 提高类型判断效率
     Private Shared ReadOnly MessageClassBaseIndex As New Dictionary(Of String, Integer) From {
@@ -181,8 +181,6 @@ Public Class MailThreadPane
             If lvMails IsNot Nothing Then
                 lvMails.BackColor = backgroundColor
                 lvMails.ForeColor = foregroundColor
-                ' 强制刷新ListView
-                lvMails.Refresh()
                 Debug.WriteLine($"ListView主题已应用: 背景={lvMails.BackColor}, 前景={lvMails.ForeColor}")
             Else
                 Debug.WriteLine("警告: lvMails 为 Nothing")
@@ -192,7 +190,6 @@ Public Class MailThreadPane
             If taskList IsNot Nothing Then
                 taskList.BackColor = backgroundColor
                 taskList.ForeColor = foregroundColor
-                taskList.Refresh()
                 Debug.WriteLine("taskList主题已应用")
             Else
                 Debug.WriteLine("taskList尚未创建，主题将在创建后应用")
@@ -203,14 +200,12 @@ Public Class MailThreadPane
             If mailHistoryList IsNot Nothing Then
                 mailHistoryList.BackColor = backgroundColor
                 mailHistoryList.ForeColor = foregroundColor
-                mailHistoryList.Refresh()
             End If
 
             ' 应用到待办邮件列表
             If pendingMailList IsNot Nothing Then
                 pendingMailList.BackColor = backgroundColor
                 pendingMailList.ForeColor = foregroundColor
-                pendingMailList.Refresh()
             End If
 
             ' 应用到分隔控件 - 按正确顺序设置颜色以确保分割条颜色正确显示
@@ -268,9 +263,9 @@ Public Class MailThreadPane
                     ApplyThemeToControlsRecursive(tabPage, backgroundColor, foregroundColor)
                 Next
 
-                ' 强制重绘TabControl
-                tabControl.Invalidate()
-                tabControl.Refresh()
+                ' 延迟重绘TabControl，避免与DrawItem冲突
+                ' tabControl.Invalidate()
+                ' tabControl.Refresh()
             Else
                 Debug.WriteLine("警告: tabControl 为 Nothing")
             End If
@@ -328,8 +323,19 @@ Public Class MailThreadPane
             ' 应用主题到所有现有的ListView项目
             ApplyThemeToAllListViewItems()
 
-            ' 强制重绘
-            Me.Invalidate(True)
+            ' 温和的重绘，避免与DrawItem冲突
+            Me.BeginInvoke(Sub()
+                Try
+                    ' 延迟刷新ListView以避免绘制冲突
+                    If lvMails IsNot Nothing Then lvMails.Invalidate()
+                    If taskList IsNot Nothing Then taskList.Invalidate()
+                    If mailHistoryList IsNot Nothing Then mailHistoryList.Invalidate()
+                    If pendingMailList IsNot Nothing Then pendingMailList.Invalidate()
+                    If tabControl IsNot Nothing Then tabControl.Invalidate()
+                Catch ex As System.Exception
+                    Debug.WriteLine($"延迟刷新异常: {ex.Message}")
+                End Try
+            End Sub)
             Debug.WriteLine($"=== ApplyTheme 完成 ===")
             Debug.WriteLine($"最终主题: 背景色={backgroundColor}, 前景色={foregroundColor}")
         Catch ex As System.Exception
@@ -579,6 +585,15 @@ Public Class MailThreadPane
     Private Const ContactInfoCacheExpiryMinutes As Integer = 120 ' 联系人信息缓存2小时
     Private Const MailPropertiesCacheExpiryMinutes As Integer = 15 ' 邮件属性缓存15分钟
 
+    ' 全局缓存开关访问 - 安全读取
+    Private Shared Function IsCacheEnabled() As Boolean
+        Try
+            Return Globals.ThisAddIn IsNot Nothing AndAlso Globals.ThisAddIn.CacheEnabled
+        Catch
+            Return True ' 若不可用，默认启用缓存以保持行为一致
+        End Try
+    End Function
+
     ' 虚拟化ListView相关常量
     Private Const PageSize As Integer = 15  ' 每页显示的邮件数量
     Private Const PreloadPages As Integer = 1  ' 预加载的页数
@@ -594,6 +609,7 @@ Public Class MailThreadPane
     ' 清理过期缓存的方法 - 支持多种缓存类型
     Private Shared Sub CleanExpiredCache()
         Try
+            If Not IsCacheEnabled() Then Return
             ' 清理联系人邮件缓存
             Dim expiredKeys As New List(Of String)
             For Each kvp In contactMailCache
@@ -646,6 +662,9 @@ Public Class MailThreadPane
 
     ' 获取缓存的联系人信息
     Private Shared Function GetCachedContactInfo(senderEmail As String) As (BusinessPhone As String, MobilePhone As String, Department As String, Company As String, Found As Boolean)
+        If Not IsCacheEnabled() Then
+            Return ("", "", "", "", False)
+        End If
         If contactInfoCache.ContainsKey(senderEmail) Then
             Dim cached = contactInfoCache(senderEmail)
             If DateTime.Now.Subtract(cached.CacheTime).TotalMinutes < ContactInfoCacheExpiryMinutes Then
@@ -657,6 +676,7 @@ Public Class MailThreadPane
 
     ' 缓存联系人信息
     Private Shared Sub CacheContactInfo(senderEmail As String, businessPhone As String, mobilePhone As String, department As String, company As String)
+        If Not IsCacheEnabled() Then Return
         contactInfoCache(senderEmail) = (businessPhone, mobilePhone, department, company, DateTime.Now)
     End Sub
 
@@ -1052,10 +1072,12 @@ Public Class MailThreadPane
             .Sorting = SortOrder.Descending,
             .AllowColumnReorder = True,
             .HeaderStyle = ColumnHeaderStyle.Clickable,
-            .OwnerDraw = True,  ' 启用自定义绘制以控制列头和项目颜色
+            .OwnerDraw = False,  ' 使用默认绘制
             .SmallImageList = New ImageList() With {.ImageSize = New Size(16, 15)}, ' 设置行高
             .VirtualMode = False  ' 初始禁用虚拟模式，根据需要动态启用
         }
+        ' 启用拖拽合并
+        lvMails.AllowDrop = True
         ' 不在这里设置颜色，等待ApplyTheme方法调用
 
         ' 创建右键菜单
@@ -1175,12 +1197,17 @@ Public Class MailThreadPane
         splitter1.Panel1.Tag = paginationPanel
 
         ' 添加绘制事件处理
-        AddHandler lvMails.DrawColumnHeader, AddressOf ListView_DrawColumnHeader
-        AddHandler lvMails.DrawSubItem, AddressOf ListView_DrawSubItem
+        ' AddHandler lvMails.DrawColumnHeader, AddressOf ListView_DrawColumnHeader  ' 移除自定义绘制
+        ' AddHandler lvMails.DrawSubItem, AddressOf ListView_DrawSubItem  ' 移除自定义绘制
 
         ' 添加虚拟模式事件处理
         AddHandler lvMails.RetrieveVirtualItem, AddressOf ListView_RetrieveVirtualItem
         AddHandler lvMails.CacheVirtualItems, AddressOf ListView_CacheVirtualItems
+
+        ' 添加拖拽事件处理
+        AddHandler lvMails.ItemDrag, AddressOf lvMails_ItemDrag
+        AddHandler lvMails.DragEnter, AddressOf lvMails_DragEnter
+        AddHandler lvMails.DragDrop, AddressOf lvMails_DragDrop
     End Sub
 
     Private Sub SetupContextMenu()
@@ -1192,10 +1219,22 @@ Public Class MailThreadPane
         AddHandler showConversationIdItem.Click, AddressOf ShowConversationId_Click
         mailContextMenu.Items.Add(showConversationIdItem)
 
+        ' 添加菜单项：复制会话ID
+        Dim copyConversationIdItem As New ToolStripMenuItem("复制会话ID")
+        AddHandler copyConversationIdItem.Click, AddressOf CopyConversationId_Click
+        mailContextMenu.Items.Add(copyConversationIdItem)
+
         ' 添加菜单项：显示任务关联状态
         Dim showTaskStatusItem As New ToolStripMenuItem("显示任务关联状态")
         AddHandler showTaskStatusItem.Click, AddressOf ShowTaskStatus_Click
         mailContextMenu.Items.Add(showTaskStatusItem)
+
+        ' 添加菜单项：自定义会话ID
+        Dim customConversationIdItem As New ToolStripMenuItem("自定义会话ID")
+        AddHandler customConversationIdItem.Click, AddressOf CustomConversationId_Click
+        mailContextMenu.Items.Add(customConversationIdItem)
+
+
 
         ' 添加分隔线
         mailContextMenu.Items.Add(New ToolStripSeparator())
@@ -1266,195 +1305,204 @@ Public Class MailThreadPane
 
 
     Private Sub ListView_DrawColumnHeader(sender As Object, e As DrawListViewColumnHeaderEventArgs)
-        ' 使用主题颜色绘制列头
-        Dim headerBackBrush As Brush = New SolidBrush(currentBackColor)
-        Dim headerTextBrush As Brush = New SolidBrush(currentForeColor)
+        Try
+            ' 使用主题颜色绘制列头
+            Using headerBackBrush As New SolidBrush(currentBackColor),
+                  headerTextBrush As New SolidBrush(currentForeColor),
+                  sf As New StringFormat(),
+                  borderPen As New Pen(Color.FromArgb(180, currentForeColor.R, currentForeColor.G, currentForeColor.B))
 
-        ' 填充列头背景
-        e.Graphics.FillRectangle(headerBackBrush, e.Bounds)
+                ' 填充列头背景
+                e.Graphics.FillRectangle(headerBackBrush, e.Bounds)
 
-        ' 绘制列头文本 - 添加一些内边距
-        Dim sf As New StringFormat()
-        sf.Alignment = StringAlignment.Near
-        sf.LineAlignment = StringAlignment.Center
-        sf.Trimming = StringTrimming.EllipsisCharacter
+                ' 设置字符串格式
+                sf.Alignment = StringAlignment.Near
+                sf.LineAlignment = StringAlignment.Center
+                sf.Trimming = StringTrimming.EllipsisCharacter
 
-        ' 为文本添加左边距，避免紧贴边框
-        Dim textRect As New Rectangle(e.Bounds.X + 4, e.Bounds.Y, e.Bounds.Width - 8, e.Bounds.Height)
-        e.Graphics.DrawString(e.Header.Text, Me.Font, headerTextBrush, textRect, sf)
+                ' 为文本添加左边距，避免紧贴边框
+                Dim textRect As New Rectangle(e.Bounds.X + 4, e.Bounds.Y, e.Bounds.Width - 8, e.Bounds.Height)
+                e.Graphics.DrawString(e.Header.Text, Me.Font, headerTextBrush, textRect, sf)
 
-        ' 绘制列头边框 - 使用更明显的边框颜色
-        Dim borderColor As Color = Color.FromArgb(180, currentForeColor.R, currentForeColor.G, currentForeColor.B) ' 70% 透明度，更明显
-        Dim borderPen As New Pen(borderColor)
-
-        ' 绘制右边框和底边框，形成分隔线效果
-        e.Graphics.DrawLine(borderPen, e.Bounds.Right - 1, e.Bounds.Top, e.Bounds.Right - 1, e.Bounds.Bottom - 1)
-        e.Graphics.DrawLine(borderPen, e.Bounds.Left, e.Bounds.Bottom - 1, e.Bounds.Right - 1, e.Bounds.Bottom - 1)
-
-        ' 清理资源
-        headerBackBrush.Dispose()
-        headerTextBrush.Dispose()
-        borderPen.Dispose()
-        sf.Dispose()
+                ' 绘制右边框和底边框，形成分隔线效果
+                e.Graphics.DrawLine(borderPen, e.Bounds.Right - 1, e.Bounds.Top, e.Bounds.Right - 1, e.Bounds.Bottom - 1)
+                e.Graphics.DrawLine(borderPen, e.Bounds.Left, e.Bounds.Bottom - 1, e.Bounds.Right - 1, e.Bounds.Bottom - 1)
+            End Using
+        Catch ex As System.Exception
+            ' 如果自定义绘制失败，回退到默认绘制
+            e.DrawDefault = True
+            Debug.WriteLine($"ListView_DrawColumnHeader异常: {ex.Message}")
+        End Try
     End Sub
 
     Private Sub PendingMailList_DrawItem(sender As Object, e As DrawListViewItemEventArgs)
-        ' 使用主题颜色绘制待办邮件ListView项目
-        Dim backgroundColor As Color = If(e.Item.BackColor = Color.Empty, currentBackColor, e.Item.BackColor)
-        Dim backBrush As Brush = New SolidBrush(backgroundColor)
-        e.Graphics.FillRectangle(backBrush, e.Bounds)
+        Try
+            ' 使用主题颜色绘制待办邮件ListView项目
+            Dim backgroundColor As Color = If(e.Item.BackColor = Color.Empty, currentBackColor, e.Item.BackColor)
+            
+            Using backBrush As Brush = New SolidBrush(backgroundColor),
+                  textBrush As Brush = New SolidBrush(currentForeColor),
+                  sf As New StringFormat()
+                
+                e.Graphics.FillRectangle(backBrush, e.Bounds)
 
-        ' 使用当前主题的前景色
-        Dim textBrush As Brush = New SolidBrush(currentForeColor)
+                ' 绘制项目文本
+                sf.Alignment = StringAlignment.Near
+                sf.LineAlignment = StringAlignment.Center
+                sf.Trimming = StringTrimming.EllipsisCharacter
 
-        ' 绘制项目文本
-        Dim sf As New StringFormat()
-        sf.Alignment = StringAlignment.Near
-        sf.LineAlignment = StringAlignment.Center
-        sf.Trimming = StringTrimming.EllipsisCharacter
+                e.Graphics.DrawString(e.Item.Text, Me.Font, textBrush, e.Bounds, sf)
 
-        e.Graphics.DrawString(e.Item.Text, Me.Font, textBrush, e.Bounds, sf)
+                ' 绘制子项目
+                e.DrawDefault = False
+                For i As Integer = 0 To e.Item.SubItems.Count - 1
+                    If i < pendingMailList.Columns.Count Then
+                        Dim subItemBounds As Rectangle = e.Item.GetBounds(ItemBoundsPortion.Entire)
+                        Dim columnWidth As Integer = pendingMailList.Columns(i).Width
+                        Dim x As Integer = 0
+                        For j As Integer = 0 To i - 1
+                            x += pendingMailList.Columns(j).Width
+                        Next
+                        subItemBounds = New Rectangle(x, subItemBounds.Y, columnWidth, subItemBounds.Height)
 
-        ' 清理资源
-        backBrush.Dispose()
-        textBrush.Dispose()
-        sf.Dispose()
-
-        ' 绘制子项目
-        e.DrawDefault = False
-        For i As Integer = 0 To e.Item.SubItems.Count - 1
-            If i < pendingMailList.Columns.Count Then
-                Dim subItemBounds As Rectangle = e.Item.GetBounds(ItemBoundsPortion.Entire)
-                Dim columnWidth As Integer = pendingMailList.Columns(i).Width
-                Dim x As Integer = 0
-                For j As Integer = 0 To i - 1
-                    x += pendingMailList.Columns(j).Width
+                        Using subItemBackBrush As Brush = New SolidBrush(backgroundColor)
+                            e.Graphics.FillRectangle(subItemBackBrush, subItemBounds)
+                            e.Graphics.DrawString(e.Item.SubItems(i).Text, Me.Font, textBrush, subItemBounds, sf)
+                        End Using
+                    End If
                 Next
-                subItemBounds = New Rectangle(x, subItemBounds.Y, columnWidth, subItemBounds.Height)
-
-                Dim subItemBackBrush As Brush = New SolidBrush(backgroundColor)
-                e.Graphics.FillRectangle(subItemBackBrush, subItemBounds)
-                e.Graphics.DrawString(e.Item.SubItems(i).Text, Me.Font, textBrush, subItemBounds, sf)
-                subItemBackBrush.Dispose()
-            End If
-        Next
+            End Using
+        Catch ex As System.Exception
+            ' 如果绘制失败，使用默认绘制
+            e.DrawDefault = True
+            Debug.WriteLine($"PendingMailList_DrawItem 异常: {ex.Message}")
+        End Try
     End Sub
 
     Private Sub TaskList_DrawItem(sender As Object, e As DrawListViewItemEventArgs)
-        ' 使用主题颜色绘制任务ListView项目
-        Dim backgroundColor As Color = If(e.Item.BackColor = Color.Empty, currentBackColor, e.Item.BackColor)
-        Dim backBrush As Brush = New SolidBrush(backgroundColor)
-        e.Graphics.FillRectangle(backBrush, e.Bounds)
+        Try
+            ' 使用主题颜色绘制任务ListView项目
+            Dim backgroundColor As Color = If(e.Item.BackColor = Color.Empty, currentBackColor, e.Item.BackColor)
+            
+            Using backBrush As Brush = New SolidBrush(backgroundColor),
+                  textBrush As Brush = New SolidBrush(currentForeColor),
+                  sf As New StringFormat()
+                
+                e.Graphics.FillRectangle(backBrush, e.Bounds)
 
-        ' 使用当前主题的前景色
-        Dim textBrush As Brush = New SolidBrush(currentForeColor)
+                ' 绘制项目文本
+                sf.Alignment = StringAlignment.Near
+                sf.LineAlignment = StringAlignment.Center
+                sf.Trimming = StringTrimming.EllipsisCharacter
 
-        ' 绘制项目文本
-        Dim sf As New StringFormat()
-        sf.Alignment = StringAlignment.Near
-        sf.LineAlignment = StringAlignment.Center
-        sf.Trimming = StringTrimming.EllipsisCharacter
+                e.Graphics.DrawString(e.Item.Text, Me.Font, textBrush, e.Bounds, sf)
 
-        e.Graphics.DrawString(e.Item.Text, Me.Font, textBrush, e.Bounds, sf)
+                ' 绘制子项目
+                e.DrawDefault = False
+                For i As Integer = 0 To e.Item.SubItems.Count - 1
+                    If i < taskList.Columns.Count Then
+                        Dim subItemBounds As Rectangle = e.Item.GetBounds(ItemBoundsPortion.Entire)
+                        Dim columnWidth As Integer = taskList.Columns(i).Width
+                        Dim x As Integer = 0
+                        For j As Integer = 0 To i - 1
+                            x += taskList.Columns(j).Width
+                        Next
+                        subItemBounds = New Rectangle(x, subItemBounds.Y, columnWidth, subItemBounds.Height)
 
-        ' 清理资源
-        backBrush.Dispose()
-        textBrush.Dispose()
-        sf.Dispose()
-
-        ' 绘制子项目
-        e.DrawDefault = False
-        For i As Integer = 0 To e.Item.SubItems.Count - 1
-            If i < taskList.Columns.Count Then
-                Dim subItemBounds As Rectangle = e.Item.GetBounds(ItemBoundsPortion.Entire)
-                Dim columnWidth As Integer = taskList.Columns(i).Width
-                Dim x As Integer = 0
-                For j As Integer = 0 To i - 1
-                    x += taskList.Columns(j).Width
+                        Using subItemBackBrush As Brush = New SolidBrush(backgroundColor)
+                            e.Graphics.FillRectangle(subItemBackBrush, subItemBounds)
+                            e.Graphics.DrawString(e.Item.SubItems(i).Text, Me.Font, textBrush, subItemBounds, sf)
+                        End Using
+                    End If
                 Next
-                subItemBounds = New Rectangle(x, subItemBounds.Y, columnWidth, subItemBounds.Height)
-
-                Dim subItemBackBrush As Brush = New SolidBrush(backgroundColor)
-                e.Graphics.FillRectangle(subItemBackBrush, subItemBounds)
-                e.Graphics.DrawString(e.Item.SubItems(i).Text, Me.Font, textBrush, subItemBounds, sf)
-                subItemBackBrush.Dispose()
-            End If
-        Next
+            End Using
+        Catch ex As System.Exception
+            ' 如果绘制失败，使用默认绘制
+            e.DrawDefault = True
+            Debug.WriteLine($"TaskList_DrawItem 异常: {ex.Message}")
+        End Try
     End Sub
 
     Private Sub MailHistoryList_DrawItem(sender As Object, e As DrawListViewItemEventArgs)
-        ' 使用主题颜色绘制邮件历史ListView项目
-        Dim backgroundColor As Color = If(e.Item.BackColor = Color.Empty, currentBackColor, e.Item.BackColor)
-        Dim backBrush As Brush = New SolidBrush(backgroundColor)
-        e.Graphics.FillRectangle(backBrush, e.Bounds)
+        Try
+            ' 使用主题颜色绘制邮件历史ListView项目
+            Dim backgroundColor As Color = If(e.Item.BackColor = Color.Empty, currentBackColor, e.Item.BackColor)
+            
+            Using backBrush As Brush = New SolidBrush(backgroundColor),
+                  textBrush As Brush = New SolidBrush(currentForeColor),
+                  sf As New StringFormat()
+                
+                e.Graphics.FillRectangle(backBrush, e.Bounds)
 
-        ' 使用当前主题的前景色
-        Dim textBrush As Brush = New SolidBrush(currentForeColor)
+                ' 绘制项目文本
+                sf.Alignment = StringAlignment.Near
+                sf.LineAlignment = StringAlignment.Center
+                sf.Trimming = StringTrimming.EllipsisCharacter
 
-        ' 绘制项目文本
-        Dim sf As New StringFormat()
-        sf.Alignment = StringAlignment.Near
-        sf.LineAlignment = StringAlignment.Center
-        sf.Trimming = StringTrimming.EllipsisCharacter
+                e.Graphics.DrawString(e.Item.Text, Me.Font, textBrush, e.Bounds, sf)
 
-        e.Graphics.DrawString(e.Item.Text, Me.Font, textBrush, e.Bounds, sf)
+                ' 绘制子项目
+                e.DrawDefault = False
+                For i As Integer = 0 To e.Item.SubItems.Count - 1
+                    If i < mailHistoryList.Columns.Count Then
+                        Dim subItemBounds As Rectangle = e.Item.GetBounds(ItemBoundsPortion.Entire)
+                        Dim columnWidth As Integer = mailHistoryList.Columns(i).Width
+                        Dim x As Integer = 0
+                        For j As Integer = 0 To i - 1
+                            x += mailHistoryList.Columns(j).Width
+                        Next
+                        subItemBounds = New Rectangle(x, subItemBounds.Y, columnWidth, subItemBounds.Height)
 
-        ' 清理资源
-        backBrush.Dispose()
-        textBrush.Dispose()
-        sf.Dispose()
-
-        ' 绘制子项目
-        e.DrawDefault = False
-        For i As Integer = 0 To e.Item.SubItems.Count - 1
-            If i < mailHistoryList.Columns.Count Then
-                Dim subItemBounds As Rectangle = e.Item.GetBounds(ItemBoundsPortion.Entire)
-                Dim columnWidth As Integer = mailHistoryList.Columns(i).Width
-                Dim x As Integer = 0
-                For j As Integer = 0 To i - 1
-                    x += mailHistoryList.Columns(j).Width
+                        Using subItemBackBrush As Brush = New SolidBrush(backgroundColor)
+                            e.Graphics.FillRectangle(subItemBackBrush, subItemBounds)
+                            e.Graphics.DrawString(e.Item.SubItems(i).Text, Me.Font, textBrush, subItemBounds, sf)
+                        End Using
+                    End If
                 Next
-                subItemBounds = New Rectangle(x, subItemBounds.Y, columnWidth, subItemBounds.Height)
-
-                Dim subItemBackBrush As Brush = New SolidBrush(backgroundColor)
-                e.Graphics.FillRectangle(subItemBackBrush, subItemBounds)
-                e.Graphics.DrawString(e.Item.SubItems(i).Text, Me.Font, textBrush, subItemBounds, sf)
-                subItemBackBrush.Dispose()
-            End If
-        Next
+            End Using
+        Catch ex As System.Exception
+            ' 如果绘制失败，使用默认绘制
+            e.DrawDefault = True
+            Debug.WriteLine($"MailHistoryList_DrawItem 异常: {ex.Message}")
+        End Try
     End Sub
 
     Private Sub ListView_DrawSubItem(sender As Object, e As DrawListViewSubItemEventArgs)
-        ' 使用ListView的背景色或项目的背景色（如果项目有特殊背景色）
-        Dim backgroundColor As Color = If(e.Item.BackColor = Color.Empty, currentBackColor, e.Item.BackColor)
-        Dim backBrush As Brush = New SolidBrush(backgroundColor)
-        e.Graphics.FillRectangle(backBrush, e.Bounds)
+        Try
+            ' 使用ListView的背景色或项目的背景色（如果项目有特殊背景色）
+            Dim backgroundColor As Color = If(e.Item.BackColor = Color.Empty, currentBackColor, e.Item.BackColor)
+            
+            Using backBrush As New SolidBrush(backgroundColor),
+                  sf As New StringFormat(),
+                  textBrush As New SolidBrush(currentForeColor)
 
-        ' 第一列使用 emoji 字体，其他列使用默认字体
-        Dim sf As New StringFormat()
-        sf.Trimming = StringTrimming.EllipsisCharacter
-        sf.FormatFlags = StringFormatFlags.NoWrap
+                ' 填充背景
+                e.Graphics.FillRectangle(backBrush, e.Bounds)
 
-        ' 使用当前主题的前景色
-        Dim textBrush As Brush = New SolidBrush(currentForeColor)
+                ' 设置字符串格式
+                sf.Trimming = StringTrimming.EllipsisCharacter
+                sf.FormatFlags = StringFormatFlags.NoWrap
 
-        If e.ColumnIndex = 0 Then
-            If e.SubItem.Text.Contains("🚩") Then
-                ' 使用特殊颜色和字体
-                Dim specialFont As New Font(iconFont, FontStyle.Bold)
-                Dim specialBrush As Brush = Brushes.Red
-                e.Graphics.DrawString(e.SubItem.Text, specialFont, specialBrush, e.Bounds, sf)
-            Else
-                e.Graphics.DrawString(e.SubItem.Text, iconFont, textBrush, e.Bounds, sf)
-            End If
-        Else
-            ' 根据是否高亮使用不同字体
-            Dim font As Font = If(e.Item.BackColor = highlightColor, highlightFont, normalFont)
-            e.Graphics.DrawString(e.SubItem.Text, font, textBrush, e.Bounds, sf)
-        End If
-
-        backBrush.Dispose()
-        textBrush.Dispose()
+                If e.ColumnIndex = 0 Then
+                    If e.SubItem.Text.Contains("🚩") Then
+                        ' 使用特殊颜色和字体
+                        Using specialFont As New Font(iconFont, FontStyle.Bold)
+                            e.Graphics.DrawString(e.SubItem.Text, specialFont, Brushes.Red, e.Bounds, sf)
+                        End Using
+                    Else
+                        e.Graphics.DrawString(e.SubItem.Text, iconFont, textBrush, e.Bounds, sf)
+                    End If
+                Else
+                    ' 根据是否高亮使用不同字体
+                    Dim font As Font = If(e.Item.BackColor = highlightColor, highlightFont, normalFont)
+                    e.Graphics.DrawString(e.SubItem.Text, font, textBrush, e.Bounds, sf)
+                End If
+            End Using
+        Catch ex As System.Exception
+            ' 如果自定义绘制失败，回退到默认绘制
+            e.DrawDefault = True
+            Debug.WriteLine($"ListView_DrawSubItem异常: {ex.Message}")
+        End Try
     End Sub
 
     ' ListView虚拟模式事件处理器
@@ -1628,14 +1676,14 @@ Public Class MailThreadPane
                 Return exchangeAddress
             End If
 
-            ' 检查缓存
-            If smtpAddressCache.ContainsKey(exchangeAddress) Then
+            ' 检查缓存（遵循全局缓存开关）
+            If IsCacheEnabled() AndAlso smtpAddressCache.ContainsKey(exchangeAddress) Then
                 Return smtpAddressCache(exchangeAddress)
             End If
 
             ' 如果不是Exchange内部地址格式，返回原地址
             If Not exchangeAddress.StartsWith("/O=") Then
-                smtpAddressCache(exchangeAddress) = exchangeAddress
+                If IsCacheEnabled() Then smtpAddressCache(exchangeAddress) = exchangeAddress
                 Return exchangeAddress
             End If
 
@@ -1728,8 +1776,8 @@ Public Class MailThreadPane
                 Debug.WriteLine($"Exchange地址 '{exchangeAddress}' 转换为SMTP地址: '{smtpAddress}'")
             End If
 
-            ' 缓存结果
-            smtpAddressCache(exchangeAddress) = smtpAddress
+            ' 缓存结果（遵循全局缓存开关）
+            If IsCacheEnabled() Then smtpAddressCache(exchangeAddress) = smtpAddress
             Return smtpAddress
 
         Catch ex As System.Exception
@@ -1828,8 +1876,8 @@ Public Class MailThreadPane
             ' 清理过期缓存
             CleanExpiredCache()
 
-            ' 检查缓存
-            If contactMailCache.ContainsKey(senderEmail) Then
+            ' 检查缓存（遵循全局缓存开关）
+            If IsCacheEnabled() AndAlso contactMailCache.ContainsKey(senderEmail) Then
                 Dim cached = contactMailCache(senderEmail)
                 If DateTime.Now.Subtract(cached.CacheTime).TotalMinutes < CacheExpiryMinutes Then
                     Return cached.Data
@@ -1910,8 +1958,8 @@ Public Class MailThreadPane
             Dim swMeeting = System.Diagnostics.Stopwatch.StartNew()
             Dim meetingCacheKey = $"meeting_{senderEmail}"
 
-            ' 检查会议统计缓存
-            If meetingStatsCache.ContainsKey(meetingCacheKey) AndAlso
+            ' 检查会议统计缓存（遵循全局缓存开关）
+            If IsCacheEnabled() AndAlso meetingStatsCache.ContainsKey(meetingCacheKey) AndAlso
                (DateTime.Now - meetingStatsCache(meetingCacheKey).CacheTime).TotalMinutes < MeetingStatsCacheExpiryMinutes Then
                 ' 使用缓存的会议统计
                 Dim cachedStats = meetingStatsCache(meetingCacheKey)
@@ -2031,8 +2079,8 @@ Public Class MailThreadPane
                         End If
                     Loop
 
-                    ' 缓存会议统计结果
-                    meetingStatsCache(meetingCacheKey) = New MeetingStatsData With {
+                    ' 缓存会议统计结果（遵循全局缓存开关）
+                    If IsCacheEnabled() Then meetingStatsCache(meetingCacheKey) = New MeetingStatsData With {
                         .TotalMeetings = totalMeetings,
                         .ProjectStats = meetingStats,
                         .UpcomingMeetings = upcomingMeetings,
@@ -2213,9 +2261,9 @@ Public Class MailThreadPane
                 info.AppendLine($"- [{i + 1}] {m.Received:yyyy-MM-dd HH:mm} {m.Subject.Replace("[EXT]", "")}")
             Next
 
-            ' 保存到缓存
+            ' 保存到缓存（遵循全局缓存开关）
             Dim result = info.ToString()
-            contactMailCache(senderEmail) = (result, DateTime.Now)
+            If IsCacheEnabled() Then contactMailCache(senderEmail) = (result, DateTime.Now)
             Debug.WriteLine($"性能统计: 联系人 {elapsedContactSearch}ms, 会议 {elapsedMeetingStats}ms, 邮件 {elapsedMailStats}ms")
 
             Return result  ' 添加返回语句
@@ -2272,7 +2320,7 @@ Public Class MailThreadPane
             .View = System.Windows.Forms.View.Details,
             .FullRowSelect = True,
             .GridLines = True,
-            .OwnerDraw = True  ' 启用自定义绘制以控制列头和项目颜色
+            .OwnerDraw = False  ' 使用默认绘制
         }
         OutlookMyList.Handlers.TaskHandler.SetupTaskList(taskList)
         taskList.Columns.Add("主题", 200)
@@ -2284,8 +2332,8 @@ Public Class MailThreadPane
 
         ' Add the event handler here, after taskList is initialized
         AddHandler taskList.DoubleClick, AddressOf TaskList_DoubleClick
-        AddHandler taskList.DrawColumnHeader, AddressOf ListView_DrawColumnHeader
-        AddHandler taskList.DrawItem, AddressOf TaskList_DrawItem
+        ' AddHandler taskList.DrawColumnHeader, AddressOf ListView_DrawColumnHeader  ' 移除自定义绘制
+        ' AddHandler taskList.DrawItem, AddressOf TaskList_DrawItem  ' 移除自定义绘制
 
         ' 检查是否需要应用主题（处理异步创建的时序问题）
         If needsThemeApplication Then
@@ -2339,6 +2387,8 @@ Public Class MailThreadPane
         AddHandler contactInfoTree.NodeMouseDoubleClick, AddressOf ContactInfoTree_NodeMouseDoubleClick
         ' 添加单击事件处理邮件链接
         AddHandler contactInfoTree.AfterSelect, AddressOf ContactInfoTree_AfterSelect
+        ' 添加拖拽事件（作为拖拽源）
+        AddHandler contactInfoTree.ItemDrag, AddressOf contactInfoTree_ItemDrag
 
         ' 只创建按钮，不预先创建文本框
         Dim x As Integer = 10
@@ -2445,7 +2495,7 @@ Public Class MailThreadPane
             .Visible = True,
             .BackColor = currentBackColor,
             .ForeColor = currentForeColor,
-            .OwnerDraw = True  ' 启用自定义绘制以控制列头和项目颜色
+            .OwnerDraw = False  ' 使用默认绘制
         }
 
         ' 设置ListView列
@@ -2458,8 +2508,8 @@ Public Class MailThreadPane
         AddHandler pendingMailList.DoubleClick, AddressOf MailHistory_DoubleClick
 
         ' 添加自定义绘制事件处理程序
-        AddHandler pendingMailList.DrawColumnHeader, AddressOf ListView_DrawColumnHeader
-        AddHandler pendingMailList.DrawItem, AddressOf PendingMailList_DrawItem
+        ' AddHandler pendingMailList.DrawColumnHeader, AddressOf ListView_DrawColumnHeader  ' 移除自定义绘制
+        ' AddHandler pendingMailList.DrawItem, AddressOf PendingMailList_DrawItem  ' 移除自定义绘制
 
         tabPage.Controls.Add(pendingMailList)
         tabControl.TabPages.Add(tabPage)
@@ -2585,7 +2635,7 @@ Public Class MailThreadPane
             .Visible = False,
             .BackColor = currentBackColor,
             .ForeColor = currentForeColor,
-            .OwnerDraw = True  ' 启用自定义绘制以控制列头和项目颜色
+            .OwnerDraw = False  ' 使用默认绘制
         }
 
         ' 设置ListView列
@@ -2596,8 +2646,8 @@ Public Class MailThreadPane
         ' 添加点击事件处理程序
         AddHandler mailHistoryList.Click, AddressOf MailHistory_Click
         AddHandler mailHistoryList.DoubleClick, AddressOf MailHistory_DoubleClick
-        AddHandler mailHistoryList.DrawColumnHeader, AddressOf ListView_DrawColumnHeader
-        AddHandler mailHistoryList.DrawItem, AddressOf MailHistoryList_DrawItem
+        ' AddHandler mailHistoryList.DrawColumnHeader, AddressOf ListView_DrawColumnHeader  ' 移除自定义绘制
+        ' AddHandler mailHistoryList.DrawItem, AddressOf MailHistoryList_DrawItem  ' 移除自定义绘制
 
         ' 设置TreeView右键菜单
         SetupTreeContextMenu()
@@ -2607,6 +2657,8 @@ Public Class MailThreadPane
         AddHandler contactInfoTree.NodeMouseDoubleClick, AddressOf ContactInfoTree_NodeMouseDoubleClick
         ' 添加单击事件处理邮件链接
         AddHandler contactInfoTree.AfterSelect, AddressOf ContactInfoTree_AfterSelect
+        ' 添加拖拽事件（作为拖拽源）
+        AddHandler contactInfoTree.ItemDrag, AddressOf contactInfoTree_ItemDrag
 
         ' 只创建按钮，不预先创建文本框
         Dim x As Integer = 10
@@ -3663,66 +3715,200 @@ Public Class MailThreadPane
     ''' </summary>
     ''' <param name="mailItem">邮件项</param>
     ''' <returns>智能会话标识符</returns>
+    Private Const CustomConversationPropertyName As String = "CustomConversationId"
+
+    Public Function ReadCustomConversationIdFromItem(mailItem As Object) As String
+        Try
+            If mailItem Is Nothing Then Return String.Empty
+
+            Dim userProps As Outlook.UserProperties = Nothing
+            If TypeOf mailItem Is Outlook.MailItem Then
+                userProps = DirectCast(mailItem, Outlook.MailItem).UserProperties
+            ElseIf TypeOf mailItem Is Outlook.AppointmentItem Then
+                userProps = DirectCast(mailItem, Outlook.AppointmentItem).UserProperties
+            ElseIf TypeOf mailItem Is Outlook.MeetingItem Then
+                userProps = DirectCast(mailItem, Outlook.MeetingItem).UserProperties
+            End If
+
+            If userProps IsNot Nothing Then
+                Dim prop = userProps.Find(CustomConversationPropertyName)
+                If prop IsNot Nothing AndAlso prop.Value IsNot Nothing Then
+                    Dim val As String = prop.Value.ToString()
+                    If Not String.IsNullOrWhiteSpace(val) Then Return val
+                End If
+            End If
+        Catch ex As System.Exception
+            Debug.WriteLine($"ReadCustomConversationIdFromItem error: {ex.Message}")
+        End Try
+        Return String.Empty
+    End Function
+
+    Private Function GetCustomConversationIdByEntryID(entryID As String) As String
+        Try
+            If String.IsNullOrEmpty(entryID) Then Return String.Empty
+            Dim item = OutlookMyList.Utils.OutlookUtils.SafeGetItemFromID(entryID)
+            If item Is Nothing Then Return String.Empty
+            Dim customId = ReadCustomConversationIdFromItem(item)
+            If Not String.IsNullOrEmpty(customId) Then Return customId
+            ' 回落：使用原始ConversationID
+            Return GetSafeConversationID(item)
+        Catch ex As System.Exception
+            Debug.WriteLine($"GetCustomConversationIdByEntryID error: {ex.Message}")
+            Return String.Empty
+        End Try
+    End Function
+
+    Public Function SetCustomConversationIdByEntryID(entryID As String, convId As String, Optional storeId As String = Nothing) As Boolean
+        Try
+            Debug.WriteLine($"SetCustomConversationIdByEntryID: entryID={entryID}, convId={convId}, storeId={(If(String.IsNullOrEmpty(storeId), "(null)", storeId))}")
+            If String.IsNullOrEmpty(entryID) Then
+                Debug.WriteLine("SetCustomConversationIdByEntryID: entryID为空，返回False")
+                Return False
+            End If
+            
+            ' 注意：允许convId为空字符串，这表示要清除自定义会话ID
+            ' 只有当convId为Nothing时才返回False
+            If convId Is Nothing Then
+                Debug.WriteLine("SetCustomConversationIdByEntryID: convId为Nothing，返回False")
+                Return False
+            End If
+            
+            Dim item = OutlookMyList.Utils.OutlookUtils.SafeGetItemFromID(entryID, storeId)
+            If item Is Nothing Then
+                Debug.WriteLine("SetCustomConversationIdByEntryID: 无法获取邮件项目，返回False")
+                Return False
+            End If
+            Debug.WriteLine($"SetCustomConversationIdByEntryID: 成功获取邮件项目，类型: {item.GetType().Name}")
+
+            Dim userProps As Outlook.UserProperties = Nothing
+            Try
+                If TypeOf item Is Outlook.MailItem Then
+                    userProps = DirectCast(item, Outlook.MailItem).UserProperties
+                    Debug.WriteLine("SetCustomConversationIdByEntryID: 邮件类型为MailItem")
+                ElseIf TypeOf item Is Outlook.AppointmentItem Then
+                    userProps = DirectCast(item, Outlook.AppointmentItem).UserProperties
+                    Debug.WriteLine("SetCustomConversationIdByEntryID: 邮件类型为AppointmentItem")
+                ElseIf TypeOf item Is Outlook.MeetingItem Then
+                    userProps = DirectCast(item, Outlook.MeetingItem).UserProperties
+                    Debug.WriteLine("SetCustomConversationIdByEntryID: 邮件类型为MeetingItem")
+                End If
+            Catch ex As System.Exception
+                Debug.WriteLine($"SetCustomConversationIdByEntryID: 获取UserProperties时出错: {ex.Message}")
+                Return False
+            End Try
+            
+            If userProps Is Nothing Then
+                Debug.WriteLine("SetCustomConversationIdByEntryID: 无法获取UserProperties，返回False")
+                Return False
+            End If
+
+            Dim prop As Outlook.UserProperty = Nothing
+            Try
+                prop = userProps.Find(CustomConversationPropertyName)
+                
+                ' 如果convId为空字符串，表示要清除自定义会话ID
+                If String.IsNullOrEmpty(convId) Then
+                    If prop IsNot Nothing Then
+                        Debug.WriteLine($"SetCustomConversationIdByEntryID: 删除自定义属性 {CustomConversationPropertyName}")
+                        prop.Delete()
+                        Debug.WriteLine("SetCustomConversationIdByEntryID: 自定义属性已删除")
+                    Else
+                        Debug.WriteLine("SetCustomConversationIdByEntryID: 自定义属性不存在，无需删除")
+                    End If
+                Else
+                    ' 设置或更新自定义会话ID
+                    If prop Is Nothing Then
+                        Debug.WriteLine($"SetCustomConversationIdByEntryID: 创建新的自定义属性 {CustomConversationPropertyName}")
+                        prop = userProps.Add(CustomConversationPropertyName, Outlook.OlUserPropertyType.olText)
+                    Else
+                        Debug.WriteLine($"SetCustomConversationIdByEntryID: 找到现有的自定义属性 {CustomConversationPropertyName}")
+                    End If
+                    prop.Value = convId
+                    Debug.WriteLine($"SetCustomConversationIdByEntryID: 设置属性值为: {convId}")
+                End If
+            Catch ex As System.Exception
+                Debug.WriteLine($"SetCustomConversationIdByEntryID: 设置属性值时出错: {ex.Message}")
+                Return False
+            End Try
+
+            ' 保存更改
+            Try
+                ' 确保属性已添加到UserProperties集合
+                If prop Is Nothing Then
+                    Debug.WriteLine("SetCustomConversationIdByEntryID: 属性对象为空，无法保存")
+                    Return False
+                End If
+
+                ' 强制保存属性
+                prop.Value = convId
+                
+                ' 保存邮件项
+                If TypeOf item Is Outlook.MailItem Then
+                    Dim mailItem = DirectCast(item, Outlook.MailItem)
+                    mailItem.Save()
+                    
+                    ' 验证保存是否成功
+                    Dim savedProp = mailItem.UserProperties.Find(CustomConversationPropertyName)
+                    If savedProp IsNot Nothing AndAlso savedProp.Value.ToString() = convId Then
+                        Debug.WriteLine("SetCustomConversationIdByEntryID: MailItem已成功保存并验证")
+                    Else
+                        Debug.WriteLine("SetCustomConversationIdByEntryID: MailItem保存后验证失败")
+                        Return False
+                    End If
+                ElseIf TypeOf item Is Outlook.AppointmentItem Then
+                    DirectCast(item, Outlook.AppointmentItem).Save()
+                    Debug.WriteLine("SetCustomConversationIdByEntryID: AppointmentItem已保存")
+                ElseIf TypeOf item Is Outlook.MeetingItem Then
+                    DirectCast(item, Outlook.MeetingItem).Save()
+                    Debug.WriteLine("SetCustomConversationIdByEntryID: MeetingItem已保存")
+                End If
+                
+                Debug.WriteLine("SetCustomConversationIdByEntryID: 操作成功完成")
+                Return True
+            Catch ex As System.Exception
+                Debug.WriteLine($"SetCustomConversationIdByEntryID: 保存邮件项时出错: {ex.Message}")
+                Return False
+            End Try
+        Catch ex As System.Exception
+            Debug.WriteLine($"SetCustomConversationIdByEntryID error: {ex.Message}")
+            Return False
+        End Try
+    End Function
+
     Private Function GetSmartConversationKey(mailItem As Object) As String
         Try
             If mailItem Is Nothing Then
                 Return String.Empty
             End If
 
-            Dim subject As String = ""
-            Dim senderEmail As String = ""
-            Dim recipientEmails As New List(Of String)
+            ' 智能会话ID功能已禁用 - 优先使用自定义会话ID或原生会话ID
             Dim conversationId As String = ""
 
             ' 获取邮件基本信息
             If TypeOf mailItem Is Outlook.MailItem Then
                 Dim mail As Outlook.MailItem = DirectCast(mailItem, Outlook.MailItem)
-                subject = If(mail.Subject, "")
-                senderEmail = If(mail.SenderEmailAddress, "")
                 conversationId = If(mail.ConversationID, "")
-
-                ' 获取收件人列表
-                For Each recipient As Outlook.Recipient In mail.Recipients
-                    If Not String.IsNullOrEmpty(recipient.Address) Then
-                        recipientEmails.Add(recipient.Address.ToLower())
-                    End If
-                Next
             ElseIf TypeOf mailItem Is Outlook.AppointmentItem Then
                 Dim appointment As Outlook.AppointmentItem = DirectCast(mailItem, Outlook.AppointmentItem)
-                subject = If(appointment.Subject, "")
                 conversationId = If(appointment.ConversationID, "")
             ElseIf TypeOf mailItem Is Outlook.MeetingItem Then
                 Dim meeting As Outlook.MeetingItem = DirectCast(mailItem, Outlook.MeetingItem)
-                subject = If(meeting.Subject, "")
-                senderEmail = If(meeting.SenderEmailAddress, "")
                 conversationId = If(meeting.ConversationID, "")
             End If
 
-            ' 优先使用ConversationID（如果存在且有效）
+            ' 优先使用自定义会话ID（如果存在且有效）
+            Dim customId As String = ReadCustomConversationIdFromItem(mailItem)
+            If Not String.IsNullOrEmpty(customId) Then
+                Return $"conv:{customId}"
+            End If
+
+            ' 次优先使用原生ConversationID
             If Not String.IsNullOrEmpty(conversationId) Then
                 Return $"conv:{conversationId}"
             End If
 
-            ' 构建智能会话标识符
-            Dim normalizedSubject As String = GetNormalizedSubject(subject)
-
-            ' 创建参与者指纹（发件人+收件人的组合，排序后确保一致性）
-            Dim participants As New List(Of String)
-            If Not String.IsNullOrEmpty(senderEmail) Then
-                participants.Add(senderEmail.ToLower())
-            End If
-            participants.AddRange(recipientEmails)
-            participants = participants.Distinct().OrderBy(Function(x) x).ToList()
-
-            Dim participantFingerprint As String = String.Join(";", participants)
-
-            ' 生成智能会话键：主题指纹 + 参与者指纹的哈希
-            Dim smartKey As String = $"{normalizedSubject}|{participantFingerprint}"
-
-            ' 使用哈希来缩短键长度，同时保持唯一性
-            Dim hash As Integer = smartKey.GetHashCode()
-            Return $"smart:{Math.Abs(hash)}"
-
+            ' 智能会话ID功能已禁用，不再生成智能会话ID
+            Return String.Empty
         Catch ex As System.Exception
             Debug.WriteLine($"GetSmartConversationKey error: {ex.Message}")
             Return String.Empty
@@ -3758,6 +3944,57 @@ Public Class MailThreadPane
         End Try
 
         Return String.Empty
+    End Function
+
+    ' 获取当前激活邮件的会话ID
+    Private Function GetCurrentActiveMailConversationId() As String
+        Try
+            ' 首先尝试使用已存储的currentConversationId
+            If Not String.IsNullOrEmpty(currentConversationId) Then
+                Debug.WriteLine($"使用已存储的会话ID: {currentConversationId}")
+                Return currentConversationId
+            End If
+
+            ' 如果没有存储的会话ID，尝试从当前邮件获取
+            If Not String.IsNullOrEmpty(currentMailEntryID) Then
+                Debug.WriteLine($"从当前邮件EntryID获取会话ID: {currentMailEntryID}")
+                Dim currentItem As Object = OutlookMyList.Utils.OutlookUtils.SafeGetItemFromID(currentMailEntryID)
+                If currentItem IsNot Nothing Then
+                    Dim conversationId As String = GetSafeConversationID(currentItem)
+                    If Not String.IsNullOrEmpty(conversationId) Then
+                        Debug.WriteLine($"从当前邮件获取到会话ID: {conversationId}")
+                        Return conversationId
+                    End If
+                End If
+            End If
+
+            ' 最后尝试从Outlook当前选中的邮件获取
+            Try
+                Dim outlookApp As Outlook.Application = Globals.ThisAddIn.Application
+                If outlookApp IsNot Nothing AndAlso outlookApp.ActiveExplorer IsNot Nothing Then
+                    Dim selection As Outlook.Selection = outlookApp.ActiveExplorer.Selection
+                    If selection IsNot Nothing AndAlso selection.Count > 0 Then
+                        Dim selectedItem As Object = selection.Item(1)
+                        If selectedItem IsNot Nothing Then
+                            Dim conversationId As String = GetSafeConversationID(selectedItem)
+                            If Not String.IsNullOrEmpty(conversationId) Then
+                                Debug.WriteLine($"从Outlook选中邮件获取到会话ID: {conversationId}")
+                                Return conversationId
+                            End If
+                        End If
+                    End If
+                End If
+            Catch ex As System.Exception
+                Debug.WriteLine($"从Outlook获取当前选中邮件失败: {ex.Message}")
+            End Try
+
+            Debug.WriteLine("无法获取当前激活邮件的会话ID")
+            Return String.Empty
+
+        Catch ex As System.Exception
+            Debug.WriteLine($"获取当前激活邮件会话ID时出错: {ex.Message}")
+            Return String.Empty
+        End Try
     End Function
 
     Private Sub ContactInfoTree_AfterSelect(sender As Object, e As TreeViewEventArgs)
@@ -3890,6 +4127,592 @@ Public Class MailThreadPane
             End If
         Catch ex As System.Exception
             Debug.WriteLine("ContactInfoTree_AfterSelect error: " & ex.Message)
+        End Try
+    End Sub
+
+    ' 启用拖拽：从联系人树或列表收集EntryID并拖入lvMails进行会话合并
+    Private Sub contactInfoTree_ItemDrag(sender As Object, e As ItemDragEventArgs)
+        Try
+            Dim node As TreeNode = TryCast(e.Item, TreeNode)
+            If node Is Nothing Then Return
+
+            Dim ids As New List(Of String)
+            Dim tagStr As String = TryCast(node.Tag, String)
+            If Not String.IsNullOrEmpty(tagStr) Then
+                If tagStr.StartsWith("CONVERSATION:") Then
+                    Dim conversationKey As String = tagStr.Substring("CONVERSATION:".Length)
+                    If currentConversationGroups IsNot Nothing AndAlso currentConversationGroups.ContainsKey(conversationKey) Then
+                        For Each m In currentConversationGroups(conversationKey)
+                            If Not String.IsNullOrEmpty(m.EntryID) Then ids.Add(m.EntryID)
+                        Next
+                    End If
+                Else
+                    ids.Add(tagStr)
+                End If
+            End If
+
+            If ids.Count > 0 Then
+                Dim dataObj As New DataObject()
+                dataObj.SetData("EntryIDList", ids)
+                dataObj.SetData(DataFormats.Text, String.Join(Environment.NewLine, ids))
+                contactInfoTree.DoDragDrop(dataObj, DragDropEffects.Copy)
+            End If
+        Catch ex As System.Exception
+            Debug.WriteLine($"contactInfoTree_ItemDrag error: {ex.Message}")
+        End Try
+    End Sub
+
+    ''' <summary>
+    ''' 验证字符串是否是有效的EntryID格式
+    ''' </summary>
+    Private Function IsValidEntryID(id As String) As Boolean
+        If String.IsNullOrEmpty(id) Then Return False
+        ' EntryID通常是长的十六进制字符串，长度通常在40-200字符之间
+        If id.Length < 40 OrElse id.Length > 200 Then Return False
+        ' 检查是否只包含十六进制字符
+        For Each c As Char In id
+            If Not Char.IsDigit(c) AndAlso Not "ABCDEF".Contains(c.ToString().ToUpper()) Then
+                Return False
+            End If
+        Next
+        Return True
+    End Function
+
+    ''' <summary>
+    ''' 解析Outlook的RenPrivateMessages格式数据，提取EntryID
+    ''' </summary>
+    ''' <param name="data">RenPrivateMessages格式的字节数组</param>
+    ''' <returns>解析出的EntryID列表</returns>
+
+    ''' <summary>
+    ''' 解析RenPrivateItem格式数据，提取EntryID
+    ''' </summary>
+    ''' <param name="data">RenPrivateItem格式的二进制数据</param>
+    ''' <returns>提取到的EntryID列表</returns>
+    Private Function ParseRenPrivateItem(data As Byte()) As List(Of String)
+        Dim entryIds As New List(Of String)
+
+        Try
+            Debug.WriteLine($"ParseRenPrivateItem: 开始解析 {data.Length} 字节数据")
+
+            If data Is Nothing OrElse data.Length < 4 Then Return entryIds
+
+            ' RenPrivateItem格式可能包含单个邮件项目的信息
+            ' 尝试不同的解析策略
+
+            ' 策略1: 查找EntryID模式（十六进制字符串）
+            Dim dataStr As String = System.Text.Encoding.ASCII.GetString(data)
+            Dim pattern As String = "[0-9A-Fa-f]{40,200}"
+            Dim matches As System.Text.RegularExpressions.MatchCollection =
+                System.Text.RegularExpressions.Regex.Matches(dataStr, pattern)
+
+            Debug.WriteLine($"ParseRenPrivateItem: 在ASCII字符串中找到 {matches.Count} 个可能的EntryID匹配")
+
+            For Each match As System.Text.RegularExpressions.Match In matches
+                Dim possibleEntryId As String = match.Value.ToUpper()
+                Debug.WriteLine($"ParseRenPrivateItem: 检查可能的EntryID: {possibleEntryId.Substring(0, Math.Min(50, possibleEntryId.Length))}...")
+                If IsValidEntryID(possibleEntryId) Then
+                    entryIds.Add(possibleEntryId)
+                    Debug.WriteLine($"ParseRenPrivateItem: 添加有效EntryID: {possibleEntryId.Substring(0, Math.Min(50, possibleEntryId.Length))}...")
+                End If
+            Next
+
+            ' 策略2: 如果ASCII解析失败，尝试直接从二进制数据中查找EntryID模式
+            If entryIds.Count = 0 Then
+                Debug.WriteLine("ParseRenPrivateItem: ASCII解析失败，尝试二进制模式匹配")
+
+                ' 查找可能的EntryID长度标记（通常EntryID前面有长度信息）
+                For i As Integer = 0 To data.Length - 8 Step 4
+                    If i + 4 < data.Length Then
+                        Dim possibleLength As Integer = BitConverter.ToInt32(data, i)
+                        If possibleLength > 40 AndAlso possibleLength < 200 AndAlso i + 4 + possibleLength <= data.Length Then
+                            ' 提取可能的EntryID数据
+                            Dim entryIdBytes(possibleLength - 1) As Byte
+                            Array.Copy(data, i + 4, entryIdBytes, 0, possibleLength)
+                            Dim entryId As String = BitConverter.ToString(entryIdBytes).Replace("-", "")
+
+                            Debug.WriteLine($"ParseRenPrivateItem: 二进制模式找到可能的EntryID，长度={possibleLength}: {entryId.Substring(0, Math.Min(50, entryId.Length))}...")
+
+                            If IsValidEntryID(entryId) Then
+                                entryIds.Add(entryId)
+                                Debug.WriteLine($"ParseRenPrivateItem: 添加有效EntryID: {entryId.Substring(0, Math.Min(50, entryId.Length))}...")
+                                Exit For ' 找到一个就够了
+                            End If
+                        End If
+                    End If
+                Next
+            End If
+
+            Debug.WriteLine($"ParseRenPrivateItem: 最终解析出 {entryIds.Count} 个有效EntryID")
+
+        Catch ex As System.Exception
+            Debug.WriteLine($"ParseRenPrivateItem异常: {ex.Message}")
+            Debug.WriteLine($"ParseRenPrivateItem异常堆栈: {ex.StackTrace}")
+        End Try
+
+        Return entryIds
+    End Function
+
+    Private Function ParseRenPrivateMessages(data As Byte()) As List(Of String)
+        Dim entryIds As New List(Of String)
+
+        Try
+            Debug.WriteLine($"ParseRenPrivateMessages: 开始解析 {data.Length} 字节数据")
+
+            If data Is Nothing OrElse data.Length < 8 Then Return entryIds
+
+            ' 显示更多的数据预览
+            Dim hexPreview As String = String.Join(" ", data.Take(Math.Min(64, data.Length)).Select(Function(b) b.ToString("X2")))
+            Debug.WriteLine($"ParseRenPrivateMessages: 数据十六进制预览(前64字节): {hexPreview}")
+
+            ' RenPrivateMessages格式通常包含多个邮件项目
+            ' 格式可能是: [邮件数量][邮件1数据][邮件2数据]...
+
+            ' 策略1: 尝试读取邮件数量（前4字节）
+            Dim mailCount As Integer = BitConverter.ToInt32(data, 0)
+            Debug.WriteLine($"ParseRenPrivateMessages: 读取到邮件数量: {mailCount}")
+
+            ' 也尝试其他位置的邮件数量
+            If data.Length >= 8 Then
+                Dim mailCount2 As Integer = BitConverter.ToInt32(data, 4)
+                Debug.WriteLine($"ParseRenPrivateMessages: 偏移4字节处的数量: {mailCount2}")
+            End If
+
+            If mailCount > 0 AndAlso mailCount < 1000 Then ' 合理的邮件数量范围
+                Dim offset As Integer = 4
+                For i As Integer = 0 To mailCount - 1
+                    If offset + 4 >= data.Length Then
+                        Debug.WriteLine($"ParseRenPrivateMessages: 偏移{offset}超出数据范围，退出")
+                        Exit For
+                    End If
+
+                    ' 读取当前邮件数据长度
+                    Dim mailDataLength As Integer = BitConverter.ToInt32(data, offset)
+                    offset += 4
+
+                    Debug.WriteLine($"ParseRenPrivateMessages: 邮件{i + 1}数据长度: {mailDataLength}, 偏移: {offset}")
+
+                    If mailDataLength > 0 AndAlso mailDataLength < data.Length AndAlso offset + mailDataLength <= data.Length Then
+                        ' 提取邮件数据
+                        Dim mailData(mailDataLength - 1) As Byte
+                        Array.Copy(data, offset, mailData, 0, mailDataLength)
+
+                        ' 显示邮件数据预览
+                        Dim mailHexPreview As String = String.Join(" ", mailData.Take(Math.Min(32, mailData.Length)).Select(Function(b) b.ToString("X2")))
+                        Debug.WriteLine($"ParseRenPrivateMessages: 邮件{i + 1}数据预览: {mailHexPreview}")
+
+                        ' 使用现有的ParseRenPrivateItem函数解析单个邮件
+                        Dim mailEntryIds As List(Of String) = ParseRenPrivateItem(mailData)
+                        entryIds.AddRange(mailEntryIds)
+                        Debug.WriteLine($"ParseRenPrivateMessages: 邮件{i + 1}解析出{mailEntryIds.Count}个EntryID")
+
+                        offset += mailDataLength
+                    Else
+                        Debug.WriteLine($"ParseRenPrivateMessages: 邮件{i + 1}数据长度无效({mailDataLength})，偏移{offset}，总长度{data.Length}，跳过")
+                        Exit For
+                    End If
+                Next
+            Else
+                Debug.WriteLine($"ParseRenPrivateMessages: 邮件数量无效({mailCount})，尝试其他解析策略")
+            End If
+
+            ' 策略2: 如果按邮件数量解析失败，尝试全局搜索EntryID模式
+            If entryIds.Count = 0 Then
+                Debug.WriteLine("ParseRenPrivateMessages: 按邮件数量解析失败，尝试全局搜索")
+
+                ' 在整个数据中搜索可能的EntryID
+                Try
+                    Dim dataStr As String = System.Text.Encoding.ASCII.GetString(data)
+                    Debug.WriteLine($"ParseRenPrivateMessages: ASCII字符串长度: {dataStr.Length}")
+                    Debug.WriteLine($"ParseRenPrivateMessages: ASCII字符串预览: {dataStr.Substring(0, Math.Min(100, dataStr.Length)).Replace(vbNullChar, ".")}")
+
+                    Dim pattern As String = "[0-9A-Fa-f]{40,200}"
+                    Dim matches As System.Text.RegularExpressions.MatchCollection =
+                        System.Text.RegularExpressions.Regex.Matches(dataStr, pattern)
+
+                    Debug.WriteLine($"ParseRenPrivateMessages: 全局搜索找到 {matches.Count} 个可能的EntryID")
+
+                    For Each match As System.Text.RegularExpressions.Match In matches
+                        Dim possibleEntryId As String = match.Value.ToUpper()
+                        Debug.WriteLine($"ParseRenPrivateMessages: 检查可能的EntryID: {possibleEntryId.Substring(0, Math.Min(50, possibleEntryId.Length))}...")
+                        If IsValidEntryID(possibleEntryId) Then
+                            entryIds.Add(possibleEntryId)
+                            Debug.WriteLine($"ParseRenPrivateMessages: 添加有效EntryID: {possibleEntryId.Substring(0, Math.Min(50, possibleEntryId.Length))}...")
+                        End If
+                    Next
+                Catch ex As System.Exception
+                    Debug.WriteLine($"ParseRenPrivateMessages: ASCII搜索异常: {ex.Message}")
+                End Try
+            End If
+
+            ' 策略3: 尝试二进制搜索
+            If entryIds.Count = 0 Then
+                Debug.WriteLine("ParseRenPrivateMessages: 全局搜索失败，尝试二进制搜索")
+
+                Dim foundCount As Integer = 0
+                For i As Integer = 0 To data.Length - 8 Step 1
+                    If i + 4 < data.Length Then
+                        Dim possibleLength As Integer = BitConverter.ToInt32(data, i)
+                        If possibleLength >= 40 AndAlso possibleLength <= 200 AndAlso i + 4 + possibleLength <= data.Length Then
+                            Debug.WriteLine($"ParseRenPrivateMessages: 在偏移{i}找到可能的长度标记: {possibleLength}")
+
+                            ' 提取可能的EntryID数据
+                            Dim entryIdBytes(possibleLength - 1) As Byte
+                            Array.Copy(data, i + 4, entryIdBytes, 0, possibleLength)
+
+                            ' 显示数据预览
+                            Dim bytesPreview As String = String.Join(" ", entryIdBytes.Take(Math.Min(16, entryIdBytes.Length)).Select(Function(b) b.ToString("X2")))
+                            Debug.WriteLine($"ParseRenPrivateMessages: 可能的EntryID数据预览: {bytesPreview}")
+
+                            ' 检查是否看起来像EntryID（大部分是可打印字符或十六进制）
+                            Dim isValidBytes As Boolean = True
+                            Dim nullCount As Integer = 0
+                            For j As Integer = 0 To entryIdBytes.Length - 1
+                                If entryIdBytes(j) = 0 Then
+                                    nullCount += 1
+                                    If nullCount > entryIdBytes.Length \ 4 Then ' 如果超过1/4是null字节，认为无效
+                                        isValidBytes = False
+                                        Exit For
+                                    End If
+                                End If
+                            Next
+
+                            Debug.WriteLine($"ParseRenPrivateMessages: 数据有效性检查: {isValidBytes}, null字节数: {nullCount}")
+
+                            If isValidBytes Then
+                                Dim entryId As String = BitConverter.ToString(entryIdBytes).Replace("-", "")
+                                Debug.WriteLine($"ParseRenPrivateMessages: 生成的EntryID: {entryId.Substring(0, Math.Min(50, entryId.Length))}...")
+                                If IsValidEntryID(entryId) Then
+                                    entryIds.Add(entryId)
+                                    Debug.WriteLine($"ParseRenPrivateMessages: 二进制搜索找到EntryID: {entryId.Substring(0, Math.Min(50, entryId.Length))}...")
+                                    i += possibleLength + 4 ' 跳过已处理的数据
+                                    foundCount += 1
+                                    If foundCount >= 10 Then Exit For ' 限制搜索数量
+                                End If
+                            End If
+                        End If
+                    End If
+                Next
+                Debug.WriteLine($"ParseRenPrivateMessages: 二进制搜索完成，检查了{foundCount}个可能的位置")
+            End If
+
+            Debug.WriteLine($"ParseRenPrivateMessages: 最终解析出 {entryIds.Count} 个有效EntryID")
+
+        Catch ex As System.Exception
+            Debug.WriteLine($"ParseRenPrivateMessages异常: {ex.Message}")
+            Debug.WriteLine($"ParseRenPrivateMessages异常堆栈: {ex.StackTrace}")
+        End Try
+
+        Return entryIds
+    End Function
+
+    Private Sub lvMails_ItemDrag(sender As Object, e As ItemDragEventArgs)
+        Try
+            If lvMails Is Nothing OrElse lvMails.SelectedItems.Count = 0 Then Return
+            Debug.WriteLine($"lvMails_ItemDrag: 开始处理拖拽，选中项数量: {lvMails.SelectedItems.Count}")
+
+            Dim ids As New List(Of String)
+            For Each it As ListViewItem In lvMails.SelectedItems
+                Debug.WriteLine($"  项目文本: {it.Text}")
+                Debug.WriteLine($"  Tag类型: {If(it.Tag Is Nothing, "Nothing", it.Tag.GetType().Name)}")
+                Debug.WriteLine($"  Tag内容: {If(it.Tag Is Nothing, "Nothing", it.Tag.ToString())}")
+
+                Dim entryId As String = TryCast(it.Tag, String)
+                Debug.WriteLine($"  转换后EntryID: {If(String.IsNullOrEmpty(entryId), "空或无效", "有效")}")
+                If Not String.IsNullOrEmpty(entryId) Then
+                    ids.Add(entryId)
+                    Debug.WriteLine($"  添加到拖拽列表: {entryId.Substring(0, Math.Min(50, entryId.Length))}...")
+                End If
+            Next
+
+            Debug.WriteLine($"lvMails_ItemDrag: 有效EntryID数量: {ids.Count}")
+            If ids.Count > 0 Then
+                Dim dataObj As New DataObject()
+                ' 使用标准格式传递EntryID列表
+                dataObj.SetData("EntryIDList", ids)
+                dataObj.SetData(DataFormats.StringFormat, String.Join(Environment.NewLine, ids))
+                dataObj.SetData(DataFormats.Text, String.Join(Environment.NewLine, ids))
+                Debug.WriteLine($"lvMails_ItemDrag: 设置拖拽数据完成")
+                Debug.WriteLine($"  EntryIDList: {ids.Count}个ID")
+                Debug.WriteLine($"  StringFormat: {String.Join(Environment.NewLine, ids).Length}字符")
+                Debug.WriteLine($"  Text: {String.Join(Environment.NewLine, ids).Length}字符")
+                lvMails.DoDragDrop(dataObj, DragDropEffects.Copy)
+            Else
+                Debug.WriteLine("lvMails_ItemDrag: 没有有效的EntryID，取消拖拽")
+            End If
+        Catch ex As System.Exception
+            Debug.WriteLine($"lvMails_ItemDrag error: {ex.Message}")
+        End Try
+    End Sub
+
+    Private Sub lvMails_DragEnter(sender As Object, e As DragEventArgs)
+        Try
+            If e.Data IsNot Nothing Then
+                ' 检查是否包含任何我们支持的拖拽格式
+                Dim supportedFormats() As String = {
+                    "EntryIDList", "RenPrivateItem", "RenPrivateMessages",
+                    "Outlook.MailItem", "Outlook.Item", "CF_OUTLOOK",
+                    DataFormats.StringFormat, DataFormats.Text
+                }
+
+                Dim hasValidFormat As Boolean = False
+                For Each format As String In supportedFormats
+                    If e.Data.GetDataPresent(format) Then
+                        hasValidFormat = True
+                        Debug.WriteLine($"DragEnter: 检测到支持的格式 '{format}'")
+                        Exit For
+                    End If
+                Next
+
+                If hasValidFormat Then
+                    e.Effect = DragDropEffects.Copy
+                    Debug.WriteLine("DragEnter: 允许拖拽操作")
+                Else
+                    e.Effect = DragDropEffects.None
+                    Debug.WriteLine("DragEnter: 不支持的拖拽格式")
+                End If
+            Else
+                e.Effect = DragDropEffects.None
+                Debug.WriteLine("DragEnter: 拖拽数据为空")
+            End If
+        Catch ex As System.Exception
+            Debug.WriteLine($"lvMails_DragEnter error: {ex.Message}")
+        End Try
+    End Sub
+
+    Private Async Sub lvMails_DragDrop(sender As Object, e As DragEventArgs)
+        Try
+            Debug.WriteLine("=== 简化拖拽处理开始 ===")
+
+            ' 简化方案：拖拽完成后，直接从当前激活的邮件获取会话ID
+            ' 然后提示用户选择要合并的邮件
+
+            ' 1. 获取当前激活邮件的会话ID
+            Dim targetConversationId As String = GetCurrentActiveMailConversationId()
+            Debug.WriteLine($"当前激活邮件的会话ID: '{targetConversationId}'")
+
+            If String.IsNullOrEmpty(targetConversationId) Then
+                MessageBox.Show("无法获取当前邮件的会话ID，请确保已选中一封邮件。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                Return
+            End If
+
+            ' 2. 从拖拽数据中获取被拖拽邮件的EntryID
+            Dim draggedMailIds As New List(Of String)
+
+            ' 尝试从EntryIDList格式获取拖拽的邮件ID
+            If e.Data.GetDataPresent("EntryIDList") Then
+                Try
+                    Dim entryIdData As Byte() = CType(e.Data.GetData("EntryIDList"), Byte())
+                    If entryIdData IsNot Nothing AndAlso entryIdData.Length > 0 Then
+                        Debug.WriteLine($"获取到EntryIDList数据，长度: {entryIdData.Length}")
+
+                        ' 解析EntryIDList格式的数据
+                        ' EntryIDList格式：前4字节是条目数，然后每个条目包含长度和EntryID
+                        Dim offset As Integer = 0
+                        If entryIdData.Length >= 4 Then
+                            Dim entryCount As Integer = BitConverter.ToInt32(entryIdData, offset)
+                            offset += 4
+                            Debug.WriteLine($"EntryIDList包含 {entryCount} 个条目")
+
+                            For i As Integer = 0 To entryCount - 1
+                                If offset + 4 <= entryIdData.Length Then
+                                    Dim entryIdLength As Integer = BitConverter.ToInt32(entryIdData, offset)
+                                    offset += 4
+
+                                    If offset + entryIdLength <= entryIdData.Length Then
+                                        Dim entryIdBytes As Byte() = New Byte(entryIdLength - 1) {}
+                                        Array.Copy(entryIdData, offset, entryIdBytes, 0, entryIdLength)
+                                        offset += entryIdLength
+
+                                        ' 将字节数组转换为十六进制字符串作为EntryID
+                                        Dim entryId As String = BitConverter.ToString(entryIdBytes).Replace("-", "")
+                                        draggedMailIds.Add(entryId)
+                                        Debug.WriteLine($"解析到EntryID: {entryId}")
+                                    End If
+                                End If
+                            Next
+                        End If
+                    End If
+                Catch ex As System.Exception
+                    Debug.WriteLine($"解析EntryIDList数据失败: {ex.Message}")
+                End Try
+            End If
+
+            ' 如果无法从拖拽数据获取，则提示用户确认并使用当前选中的邮件
+            If draggedMailIds.Count = 0 Then
+                Debug.WriteLine($"从拖拽数据中未获取到邮件ID，当前选中邮件数量: {lvMails.SelectedItems.Count}")
+
+                Dim result As DialogResult = MessageBox.Show(
+                    $"检测到拖拽操作。{Environment.NewLine}{Environment.NewLine}" &
+                    $"是否要将当前选中的邮件合并到目标会话？{Environment.NewLine}" &
+                    $"目标会话ID: {targetConversationId.Substring(0, Math.Min(20, targetConversationId.Length))}...",
+                    "邮件合并确认",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question)
+
+                If result = DialogResult.No Then
+                    Debug.WriteLine("用户取消了邮件合并操作")
+                    Return
+                End If
+
+                ' 使用当前ListView中选中的邮件
+                Debug.WriteLine("开始从ListView获取选中邮件的EntryID...")
+                For Each item As ListViewItem In lvMails.SelectedItems
+                    If item.Tag IsNot Nothing Then
+                        Dim entryId As String = ConvertEntryIDToString(item.Tag)
+                        draggedMailIds.Add(entryId)
+                        Debug.WriteLine($"添加邮件ID: {entryId}")
+                    Else
+                        Debug.WriteLine("发现一个没有Tag的ListView项目")
+                    End If
+                Next
+                Debug.WriteLine($"从ListView获取到 {draggedMailIds.Count} 个邮件ID")
+            End If
+
+            If draggedMailIds.Count = 0 Then
+                MessageBox.Show("没有找到要合并的邮件。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                Return
+            End If
+
+            Debug.WriteLine($"准备合并 {draggedMailIds.Count} 封邮件")
+
+            ' 4. 执行邮件合并操作
+            ShowProgress($"正在合并邮件到会话...")
+
+            Dim success As Integer = 0
+            Dim totalMails As Integer = 0
+
+            Debug.WriteLine($"开始合并会话，目标ID: {targetConversationId}，被拖拽邮件数: {draggedMailIds.Count}")
+
+            ' 获取所有需要处理的会话ID和对应的邮件
+            Dim sourceConversationIds As New HashSet(Of String)
+            Dim conversationMailsMap As New Dictionary(Of String, List(Of String))
+
+            Await Task.Run(Sub()
+                               ' 第一步：获取被拖拽邮件的原始会话ID，并收集每个会话的所有邮件
+                               For Each mailId As String In draggedMailIds
+                                   Try
+                                       Dim mailItem = Globals.ThisAddIn.Application.Session.GetItemFromID(mailId)
+                                       If mailItem IsNot Nothing Then
+                                           Dim originalConversationId As String = GetSafeConversationID(mailItem)
+                                           Debug.WriteLine($"邮件 {mailId} 的原始会话ID: {originalConversationId}, 目标会话ID: {targetConversationId}")
+
+                                           If Not String.IsNullOrEmpty(originalConversationId) AndAlso originalConversationId <> targetConversationId Then
+                                               sourceConversationIds.Add(originalConversationId)
+                                               Debug.WriteLine($"发现需要处理的源会话ID: {originalConversationId}")
+
+                                               ' 如果还没有收集过这个会话的邮件，则收集
+                                               If Not conversationMailsMap.ContainsKey(originalConversationId) Then
+                                                   Dim conversationMails As New List(Of String)
+
+                                                   ' 使用第一个邮件来获取整个会话的邮件列表
+                                                   Try
+                                                       Dim allMailsInConversation = GetAllMailsInConversation(mailId)
+                                                       conversationMails.AddRange(allMailsInConversation)
+                                                       conversationMailsMap(originalConversationId) = conversationMails
+                                                       Debug.WriteLine($"会话 {originalConversationId} 包含 {conversationMails.Count} 封邮件")
+                                                   Catch ex As System.Exception
+                                                       Debug.WriteLine($"获取会话 {originalConversationId} 的邮件列表时出错: {ex.Message}")
+                                                       conversationMailsMap(originalConversationId) = New List(Of String)
+                                                   End Try
+                                               End If
+                                           Else
+                                               If String.IsNullOrEmpty(originalConversationId) Then
+                                                   Debug.WriteLine($"邮件 {mailId} 没有会话ID")
+                                               Else
+                                                   Debug.WriteLine($"邮件 {mailId} 已经在目标会话中，无需处理")
+                                               End If
+                                           End If
+                                           Marshal.ReleaseComObject(mailItem)
+                                       End If
+                                   Catch ex As System.Exception
+                                       Debug.WriteLine($"获取邮件 {mailId} 的会话ID时出错: {ex.Message}")
+                                   End Try
+                               Next
+
+                               ' 计算总邮件数
+                               For Each kvp In conversationMailsMap
+                                   totalMails += kvp.Value.Count
+                               Next
+
+                               ' 第二步：对每个源会话的所有邮件更新为目标会话ID
+                               For Each kvp In conversationMailsMap
+                                   Dim sourceConversationId As String = kvp.Key
+                                   Dim conversationMailIds As List(Of String) = kvp.Value
+
+                                   Try
+                                       Debug.WriteLine($"开始处理源会话: {sourceConversationId}，包含 {conversationMailIds.Count} 封邮件")
+
+                                       ' 更新该会话的所有邮件
+                                       For Each mailEntryId As String In conversationMailIds
+                                           Try
+                                               Debug.WriteLine($"正在为邮件 {mailEntryId} 设置自定义会话ID为: {targetConversationId}")
+                                               If SetCustomConversationIdByEntryID(mailEntryId, targetConversationId) Then
+                                                   success += 1
+                                                   Debug.WriteLine($"邮件 {mailEntryId} 自定义会话ID设置成功")
+                                               Else
+                                                   Debug.WriteLine($"邮件 {mailEntryId} 自定义会话ID设置失败")
+                                               End If
+                                           Catch ex As System.Exception
+                                               Debug.WriteLine($"设置邮件 {mailEntryId} 的自定义会话ID时出错: {ex.Message}")
+                                           End Try
+
+                                           ' 进度更新
+                                           Me.BeginInvoke(Sub() UpdateProgress($"已处理 {success}/{totalMails}"))
+                                       Next
+
+                                   Catch ex As System.Exception
+                                       Debug.WriteLine($"处理源会话 {sourceConversationId} 时出错: {ex.Message}")
+                                   End Try
+                               Next
+                           End Sub)
+
+            HideProgress()
+
+            ' 清除相关会话的缓存，确保刷新时重新加载数据
+            Try
+                SyncLock conversationMailsCache
+                    ' 清除目标会话的缓存
+                    If conversationMailsCache.ContainsKey(targetConversationId) Then
+                        conversationMailsCache.Remove(targetConversationId)
+                        Debug.WriteLine($"已清除目标会话缓存: {targetConversationId}")
+                    End If
+
+                    ' 清除所有源会话的缓存
+                    For Each sourceConversationId As String In sourceConversationIds
+                        If conversationMailsCache.ContainsKey(sourceConversationId) Then
+                            conversationMailsCache.Remove(sourceConversationId)
+                            Debug.WriteLine($"已清除源会话缓存: {sourceConversationId}")
+                        End If
+                    Next
+                End SyncLock
+            Catch ex As System.Exception
+                Debug.WriteLine($"清除会话缓存时出错: {ex.Message}")
+            End Try
+
+            ' 强制刷新当前列表与右侧内容
+            ' 由于邮件已合并到目标会话，需要强制重新加载列表来显示新的邮件
+            Debug.WriteLine("拖拽完成，强制刷新会话列表以显示合并后的邮件")
+
+            ' 临时清空当前会话ID，强制UpdateMailList重新加载
+            Dim tempConversationId As String = currentConversationId
+            currentConversationId = String.Empty
+
+            ' 强制刷新列表
+            UpdateMailList(tempConversationId, currentMailEntryID)
+
+            ' 恢复会话ID
+            currentConversationId = tempConversationId
+
+            Dim message As String = $"邮件合并完成：成功 {success}/{totalMails}" & Environment.NewLine &
+                                   $"已将选中的 {totalMails} 封邮件合并到当前会话"
+
+            MessageBox.Show(message, "合并结果", MessageBoxButtons.OK, MessageBoxIcon.Information)
+
+        Catch ex As System.Exception
+            Debug.WriteLine($"lvMails_DragDrop error: {ex.Message}")
+            HideProgress()
+            MessageBox.Show($"拖拽处理时出错: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
         End Try
     End Sub
 
@@ -4646,15 +5469,18 @@ Public Class MailThreadPane
             entryIdCompareCache.Clear()
             entryIdCacheExpireTime = DateTime.Now.AddMinutes(CacheExpireMinutes)
 
+            ' 使用传入的conversationId作为有效会话ID（已禁用智能会话ID）
+            Dim effectiveConversationId As String = conversationId
+
             ' 检查是否需要重新加载列表
             Dim needReload As Boolean = True
-            If lvMails.Items.Count > 0 AndAlso Not String.IsNullOrEmpty(conversationId) AndAlso
-           String.Equals(conversationId, currentConversationId, StringComparison.OrdinalIgnoreCase) Then
+            If lvMails.Items.Count > 0 AndAlso Not String.IsNullOrEmpty(effectiveConversationId) AndAlso
+               String.Equals(effectiveConversationId, currentConversationId, StringComparison.OrdinalIgnoreCase) Then
                 needReload = False
             End If
 
-            ' 单独处理无会话的邮件
-            If Not String.IsNullOrEmpty(mailEntryID) AndAlso String.IsNullOrEmpty(conversationId) Then
+            ' 单独处理无会话的邮件（无智能会话ID）
+            If Not String.IsNullOrEmpty(mailEntryID) AndAlso String.IsNullOrEmpty(effectiveConversationId) Then
                 Debug.WriteLine($"处理无会话邮件，强制重新加载({mailEntryID})")
 
                 ' 异步加载列表（将当前单封邮件加入列表）
@@ -4678,8 +5504,8 @@ Public Class MailThreadPane
                 currentMailEntryID = mailEntryID
 
                 ' 更新当前会话ID并检查笔记
-                If Not String.Equals(conversationId, currentConversationId, StringComparison.OrdinalIgnoreCase) Then
-                    currentConversationId = conversationId
+                If Not String.Equals(effectiveConversationId, currentConversationId, StringComparison.OrdinalIgnoreCase) Then
+                    currentConversationId = effectiveConversationId
                     'Await CheckWolaiRecordAsync(currentConversationId)
                 End If
             Else
@@ -4714,10 +5540,23 @@ Public Class MailThreadPane
                 Return
             End If
 
-            ' 检查是否需要重新加载列表
+            ' 检查是否需要重新加载列表（使用智能会话ID）
             Dim needReload As Boolean = True
-            If lvMails.Items.Count > 0 AndAlso Not String.IsNullOrEmpty(conversationId) AndAlso
-               String.Equals(conversationId, currentConversationId, StringComparison.OrdinalIgnoreCase) Then
+            Dim effectiveConversationId As String = conversationId
+            Try
+                If Not String.IsNullOrEmpty(mailEntryID) Then
+                    Dim item = OutlookMyList.Utils.OutlookUtils.SafeGetItemFromID(mailEntryID)
+                    If item IsNot Nothing Then
+                        Dim smartKey = GetSmartConversationKey(item)
+                        If Not String.IsNullOrEmpty(smartKey) Then
+                            effectiveConversationId = smartKey
+                        End If
+                    End If
+                End If
+            Catch
+            End Try
+            If lvMails.Items.Count > 0 AndAlso Not String.IsNullOrEmpty(effectiveConversationId) AndAlso
+               String.Equals(effectiveConversationId, currentConversationId, StringComparison.OrdinalIgnoreCase) Then
                 needReload = False
             End If
 
@@ -4737,8 +5576,8 @@ Public Class MailThreadPane
                 ' 重新添加事件处理器
                 'AddHandler lvMails.SelectedIndexChanged, AddressOf lvMails_SelectedIndexChanged
                 ' 更新当前会话ID并检查笔记
-                If Not String.Equals(conversationId, currentConversationId, StringComparison.OrdinalIgnoreCase) Then
-                    currentConversationId = conversationId
+                If Not String.Equals(effectiveConversationId, currentConversationId, StringComparison.OrdinalIgnoreCase) Then
+                    currentConversationId = effectiveConversationId
                     'Await CheckWolaiRecordAsync(currentConversationId)
                 End If
 
@@ -5014,8 +5853,8 @@ Public Class MailThreadPane
                             entryID = DirectCast(mailItem, Outlook.MeetingItem).EntryID
                     End Select
 
-                    ' 检查缓存
-                    If Not String.IsNullOrEmpty(entryID) Then
+                    ' 检查缓存（遵循全局缓存开关）
+                    If IsCacheEnabled() AndAlso Not String.IsNullOrEmpty(entryID) Then
                         SyncLock mailPropertiesCache
                             If mailPropertiesCache.ContainsKey(entryID) Then
                                 Dim cacheEntry = mailPropertiesCache(entryID)
@@ -5068,8 +5907,8 @@ Public Class MailThreadPane
                             props.IsValid = True
                     End Select
 
-                    ' 将结果存入缓存
-                    If props.IsValid AndAlso Not String.IsNullOrEmpty(props.EntryID) Then
+                    ' 将结果存入缓存（遵循全局缓存开关）
+                    If IsCacheEnabled() AndAlso props.IsValid AndAlso Not String.IsNullOrEmpty(props.EntryID) Then
                         SyncLock mailPropertiesCache
                             ' 限制缓存大小，防止内存泄漏
                             If mailPropertiesCache.Count >= 500 Then
@@ -5210,27 +6049,22 @@ Public Class MailThreadPane
         Dim allItems As New List(Of ListViewItem)()
         Dim tempMailItems As New List(Of (Index As Integer, EntryID As String))()
 
-        ' 首先检查缓存
-        Dim conversationId As String = String.Empty
+        ' 首先检查缓存（使用智能会话ID）
+        Dim smartId As String = String.Empty
         Try
             currentItem = OutlookMyList.Utils.OutlookUtils.SafeGetItemFromID(currentMailEntryID)
             If currentItem IsNot Nothing Then
-                If TypeOf currentItem Is Outlook.MailItem Then
-                    conversationId = DirectCast(currentItem, Outlook.MailItem).ConversationID
-                ElseIf TypeOf currentItem Is Outlook.AppointmentItem Then
-                    conversationId = DirectCast(currentItem, Outlook.AppointmentItem).ConversationID
-                ElseIf TypeOf currentItem Is Outlook.MeetingItem Then
-                    conversationId = DirectCast(currentItem, Outlook.MeetingItem).ConversationID
-                End If
+                ' 统一使用智能会话键（优先自定义ID）
+                smartId = GetSmartConversationKey(currentItem)
             End If
         Catch ex As System.Exception
             Debug.WriteLine($"获取会话ID失败: {ex.Message}")
         End Try
 
-        ' 如果会话ID相同，只需要更新高亮
-        If Not String.IsNullOrEmpty(conversationId) AndAlso
-           String.Equals(conversationId, currentConversationId, StringComparison.OrdinalIgnoreCase) Then
-            Debug.WriteLine($"会话ID未变化({conversationId})，只更新高亮")
+        ' 如果智能会话ID相同，只需要更新高亮
+        If Not String.IsNullOrEmpty(smartId) AndAlso
+           String.Equals(smartId, currentConversationId, StringComparison.OrdinalIgnoreCase) Then
+            Debug.WriteLine($"智能会话ID未变化({smartId})，只更新高亮")
             If Me.IsHandleCreated Then
                 Me.BeginInvoke(Sub()
                                    Dim oldEntryID As String = Me.currentMailEntryID
@@ -5242,11 +6076,11 @@ Public Class MailThreadPane
         End If
 
         ' 无会话邮件强制重新加载，不进行EntryID比较
-        Debug.WriteLine($"处理邮件: 会话ID={If(String.IsNullOrEmpty(conversationId), "无", conversationId)}, EntryID={currentMailEntryID}")
+        Debug.WriteLine($"处理邮件: 智能会话ID={If(String.IsNullOrEmpty(smartId), "无", smartId)}, EntryID={currentMailEntryID}")
 
-        ' 检查会话缓存
-        If Not String.IsNullOrEmpty(conversationId) AndAlso conversationMailsCache.ContainsKey(conversationId) Then
-            Dim cachedData = conversationMailsCache(conversationId)
+        ' 检查会话缓存（遵循全局缓存开关）
+        If IsCacheEnabled() AndAlso Not String.IsNullOrEmpty(smartId) AndAlso conversationMailsCache.ContainsKey(smartId) Then
+            Dim cachedData = conversationMailsCache(smartId)
             If (DateTime.Now - cachedData.CacheTime).TotalMinutes < ConversationCacheExpiryMinutes Then
                 Debug.WriteLine($"使用缓存的会话邮件数据: {cachedData.ListViewItems.Count} 封邮件")
 
@@ -5273,7 +6107,7 @@ Public Class MailThreadPane
                 GoTo UpdateUI
             Else
                 ' 缓存过期，移除
-                conversationMailsCache.Remove(conversationId)
+                conversationMailsCache.Remove(smartId)
             End If
         End If
 
@@ -5291,6 +6125,157 @@ Public Class MailThreadPane
                     conversation = DirectCast(currentItem, Outlook.AppointmentItem).GetConversation()
                 ElseIf TypeOf currentItem Is Outlook.MeetingItem Then
                     conversation = DirectCast(currentItem, Outlook.MeetingItem).GetConversation()
+                End If
+
+                ' 如果当前邮件存在自定义会话ID，优先按自定义会话ID构建列表
+                Dim customId As String = ReadCustomConversationIdFromItem(currentItem)
+                If Not String.IsNullOrEmpty(customId) Then
+                    Debug.WriteLine($"检测到自定义会话ID: {customId}，优先按自定义ID分组加载")
+
+                    ' 初始化集合
+                    allItems = New List(Of ListViewItem)(50)
+                    tempMailItems = New List(Of (Index As Integer, EntryID As String))(50)
+
+                    ' 获取所有核心邮件文件夹
+                    Dim allMailFolders As New List(Of Outlook.Folder)
+                    Try
+                        ' 获取所有核心邮件文件夹（已包含归档文件夹）
+                        Dim rootFolder As Outlook.Folder = Globals.ThisAddIn.Application.Session.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderInbox).Parent
+                        GetAllMailFolders(rootFolder, allMailFolders)
+                        
+                        If allMailFolders.Count = 0 Then
+                            allMailFolders.Add(DirectCast(Globals.ThisAddIn.Application.Session.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderInbox), Outlook.Folder))
+                        End If
+                        Debug.WriteLine($"自定义会话ID搜索将覆盖 {allMailFolders.Count} 个邮件文件夹")
+                    Catch ex As System.Exception
+                        Debug.WriteLine($"获取核心邮件文件夹失败: {ex.Message}")
+                    End Try
+
+                    Dim currentIndex As Integer = 0
+                    For Each folder As Outlook.Folder In allMailFolders
+                        Try
+                            ' 优先尝试使用Restrict按用户定义属性过滤
+                            Dim items As Outlook.Items = Nothing
+                            Try
+                                ' 使用更高效的搜索方式：先尝试使用Restrict，如果失败则使用Find方法
+                                Dim filter As String = $"[CustomConversationId] = '{customId}'"
+                                items = folder.Items.Restrict(filter)
+                                Debug.WriteLine($"在文件夹 {folder.Name} 使用过滤器查找自定义会话邮件: {filter}, 结果数={items.Count}")
+                            Catch ex As System.Runtime.InteropServices.COMException
+                                Debug.WriteLine($"使用Restrict过滤自定义属性失败: {ex.Message}")
+                                ' 如果自定义属性不存在，则使用Find方法搜索
+                                If ex.Message.Contains("unknown") OrElse ex.Message.Contains("Unknown") Then
+                                    ' 使用Find方法搜索，这比遍历所有项目更高效
+                                    items = New Outlook.Items()
+                                    Try
+                                        ' 使用Find方法搜索Subject字段，这只是为了获取一个Items集合
+                                        Dim tempItems = folder.Items
+                                        tempItems.Sort("[ReceivedTime]", False)
+                                        
+                                        ' 限制搜索范围，只处理最近的100封邮件
+                                        Dim maxItemsToCheck As Integer = Math.Min(100, tempItems.Count)
+                                        Dim itemsChecked As Integer = 0
+                                        
+                                        For i As Integer = 1 To tempItems.Count
+                                            If itemsChecked >= maxItemsToCheck Then Exit For
+                                            
+                                            Try
+                                                Dim item As Object = tempItems.Item(i)
+                                                itemsChecked += 1
+                                                
+                                                ' 检查自定义会话ID
+                                                Dim itemCustomId As String = ReadCustomConversationIdFromItem(item)
+                                                If Not String.IsNullOrEmpty(itemCustomId) AndAlso itemCustomId = customId Then
+                                                    items.Add(item)
+                                                End If
+                                            Catch ex2 As System.Exception
+                                                ' 忽略单个项目的错误，继续处理下一个
+                                            End Try
+                                        Next
+                                        
+                                        Debug.WriteLine($"在文件夹 {folder.Name} 中使用优化搜索，检查了 {itemsChecked} 项，找到 {items.Count} 个匹配项")
+                                    Catch ex2 As System.Exception
+                                        Debug.WriteLine($"优化搜索出现异常: {ex2.Message}")
+                                    End Try
+                                End If
+                            Catch ex As System.Exception
+                                Debug.WriteLine($"Restrict出现异常: {ex.Message}")
+                            End Try
+
+                            If items IsNot Nothing AndAlso items.Count > 0 Then
+                                For Each it As Object In items
+                                    Try
+                                        
+                                        Dim entryId As String = GetPermanentEntryID(it)
+                                        Dim subject As String = "无主题"
+                                        Dim senderName As String = "未知发件人"
+                                        Dim receivedTime As DateTime = DateTime.MinValue
+                                        Dim messageClass As String = ""
+
+                                        Try
+                                            subject = If(it.Subject, "无主题")
+                                        Catch
+                                            subject = "无法访问"
+                                        End Try
+
+                                        Try
+                                            If TypeOf it Is Outlook.MailItem Then
+                                                senderName = If(DirectCast(it, Outlook.MailItem).SenderName, "未知发件人")
+                                                receivedTime = DirectCast(it, Outlook.MailItem).ReceivedTime
+                                            ElseIf TypeOf it Is Outlook.AppointmentItem Then
+                                                senderName = If(DirectCast(it, Outlook.AppointmentItem).Organizer, "未知组织者")
+                                                receivedTime = DirectCast(it, Outlook.AppointmentItem).Start
+                                            ElseIf TypeOf it Is Outlook.MeetingItem Then
+                                                senderName = If(DirectCast(it, Outlook.MeetingItem).SenderName, "未知发件人")
+                                                receivedTime = DirectCast(it, Outlook.MeetingItem).ReceivedTime
+                                            End If
+                                        Catch
+                                        End Try
+
+                                        Try
+                                            messageClass = If(it.MessageClass, "")
+                                        Catch
+                                            messageClass = ""
+                                        End Try
+
+                                        ' 快速图标文本
+                                        Dim hasAttach As Boolean = False
+                                        Dim flagStatus As Integer = 0
+                                        Try
+                                            If TypeOf it Is Outlook.MailItem Then
+                                                Dim mailForAttach = DirectCast(it, Outlook.MailItem)
+                                                hasAttach = (mailForAttach.Attachments IsNot Nothing AndAlso mailForAttach.Attachments.Count > 0)
+                                                flagStatus = mailForAttach.FlagStatus
+                                            End If
+                                        Catch
+                                        End Try
+
+                                        Dim iconText As String = GetIconTextFast(messageClass, hasAttach, flagStatus)
+
+                                        Dim lvi As New ListViewItem(iconText) With {
+                                            .Tag = entryId,
+                                            .Name = currentIndex.ToString()
+                                        }
+                                        With lvi.SubItems
+                                            .Add(If(receivedTime <> DateTime.MinValue, receivedTime.ToString("yyyy-MM-dd HH:mm"), "无时间"))
+                                            .Add(senderName)
+                                            .Add(subject)
+                                        End With
+
+                                        allItems.Add(lvi)
+                                        tempMailItems.Add((currentIndex, entryId))
+                                        currentIndex += 1
+                                    Catch
+                                    End Try
+                                Next
+                            End If
+                        Catch ex As System.Exception
+                            Debug.WriteLine($"扫描文件夹 {folder.Name} 时出错: {ex.Message}")
+                        End Try
+                    Next
+
+                    ' 构建完成后跳转到UI更新
+                    GoTo UpdateUI
                 End If
 
                 If conversation Is Nothing Then
@@ -5641,8 +6626,8 @@ Public Class MailThreadPane
         End Try
 
 UpdateUI:
-        ' 优化缓存策略：只缓存合理大小的会话，减少内存占用
-        If Not String.IsNullOrEmpty(conversationId) AndAlso allItems.Count > 0 AndAlso allItems.Count <= 50 Then
+        ' 优化缓存策略：只缓存合理大小的会话，减少内存占用（使用智能会话ID，遵循开关）
+        If IsCacheEnabled() AndAlso Not String.IsNullOrEmpty(smartId) AndAlso allItems.Count > 0 AndAlso allItems.Count <= 50 Then
             Dim swCache As New Stopwatch()
             swCache.Start()
 
@@ -5686,7 +6671,7 @@ UpdateUI:
                     End If
                 End If
 
-                conversationMailsCache(conversationId) = (New List(Of (Index As Integer, EntryID As String))(tempMailItems), cacheItems, DateTime.Now)
+                conversationMailsCache(smartId) = (New List(Of (Index As Integer, EntryID As String))(tempMailItems), cacheItems, DateTime.Now)
             End SyncLock
 
             swCache.Stop()
@@ -6347,9 +7332,13 @@ UpdateUI:
                             Dim rawTag = item.Tag
                             Dim cacheKey As String = If(TypeOf rawTag Is String, DirectCast(rawTag, String), ConvertEntryIDToString(rawTag))
                             Dim itemEntryID As String = String.Empty
-                            If Not entryIdCompareCache.TryGetValue(cacheKey, itemEntryID) Then
+                            If IsCacheEnabled() Then
+                                If Not entryIdCompareCache.TryGetValue(cacheKey, itemEntryID) Then
+                                    itemEntryID = ConvertEntryIDToString(rawTag)
+                                    entryIdCompareCache(cacheKey) = itemEntryID
+                                End If
+                            Else
                                 itemEntryID = ConvertEntryIDToString(rawTag)
-                                entryIdCompareCache(cacheKey) = itemEntryID
                             End If
                             ' 尝试使用CompareEntryIDs进行MAPI级别的比较，如果失败回退到字符串比较
                             Dim isMatchedOld As Boolean = False
@@ -6383,9 +7372,13 @@ UpdateUI:
                             Dim rawTag = item.Tag
                             Dim cacheKey As String = If(TypeOf rawTag Is String, DirectCast(rawTag, String), ConvertEntryIDToString(rawTag))
                             Dim itemEntryID As String = String.Empty
-                            If Not entryIdCompareCache.TryGetValue(cacheKey, itemEntryID) Then
+                            If IsCacheEnabled() Then
+                                If Not entryIdCompareCache.TryGetValue(cacheKey, itemEntryID) Then
+                                    itemEntryID = ConvertEntryIDToString(rawTag)
+                                    entryIdCompareCache(cacheKey) = itemEntryID
+                                End If
+                            Else
                                 itemEntryID = ConvertEntryIDToString(rawTag)
-                                entryIdCompareCache(cacheKey) = itemEntryID
                             End If
                             Debug.WriteLine($"UpdateHighlightByEntryID: 比较项目EntryID={itemEntryID} (Tag类型: {item.Tag.GetType().Name}, 原始Tag长度: {If(TypeOf rawTag Is String, DirectCast(rawTag, String).Length, If(TypeOf rawTag Is Byte(), DirectCast(rawTag, Byte()).Length, 0))})")
                             ' 尝试使用CompareEntryIDs进行MAPI级别的比较，如果失败回退到字符串比较
@@ -6440,7 +7433,7 @@ UpdateUI:
     Private Sub SetItemHighlight(item As ListViewItem, isHighlighted As Boolean)
         If isHighlighted Then
             item.BackColor = highlightColor
-            item.ForeColor = SystemColors.HighlightText
+            item.ForeColor = currentForeColor
             item.Font = highlightFont
             item.Selected = True
         Else
@@ -6952,6 +7945,44 @@ UpdateUI:
         End Try
     End Sub
 
+    Private Sub CopyConversationId_Click(sender As Object, e As EventArgs)
+        Try
+            If lvMails.SelectedItems.Count = 0 Then
+                MessageBox.Show("请先选择一封邮件", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                Return
+            End If
+
+            Dim selectedItem As ListViewItem = lvMails.SelectedItems(0)
+            Dim entryId As String = selectedItem.Tag?.ToString()
+
+            If String.IsNullOrEmpty(entryId) Then
+                MessageBox.Show("无法获取邮件EntryID", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                Return
+            End If
+
+            ' 获取邮件项并提取会话ID
+            Dim mailItem As Object = OutlookMyList.Utils.OutlookUtils.SafeGetItemFromID(entryId)
+            If mailItem IsNot Nothing Then
+                Try
+                    Dim conversationId As String = GetSafeConversationID(mailItem)
+                    If Not String.IsNullOrEmpty(conversationId) Then
+                        Clipboard.SetText(conversationId)
+                        MessageBox.Show("会话ID已复制到剪贴板", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                    Else
+                        MessageBox.Show("该邮件没有会话ID", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                    End If
+                Finally
+                    OutlookMyList.Utils.OutlookUtils.SafeReleaseComObject(mailItem)
+                End Try
+            Else
+                MessageBox.Show("无法获取邮件项", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            End If
+        Catch ex As System.Exception
+            Debug.WriteLine($"CopyConversationId_Click error: {ex.Message}")
+            MessageBox.Show($"复制会话ID时出错: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        End Try
+    End Sub
+
     Private Sub ShowTaskStatus_Click(sender As Object, e As EventArgs)
         Try
             If lvMails.SelectedItems.Count = 0 Then
@@ -6997,6 +8028,234 @@ UpdateUI:
             MessageBox.Show($"获取任务状态时出错: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
         End Try
     End Sub
+
+    Private Sub CustomConversationId_Click(sender As Object, e As EventArgs)
+        Try
+            If lvMails.SelectedItems.Count = 0 Then
+                MessageBox.Show("请先选择一封邮件", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                Return
+            End If
+
+            Dim selectedItem As ListViewItem = lvMails.SelectedItems(0)
+            Dim entryId As String = selectedItem.Tag?.ToString()
+
+            If String.IsNullOrEmpty(entryId) Then
+                MessageBox.Show("无法获取邮件EntryID", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                Return
+            End If
+
+            ' 获取邮件项
+            Dim mailItem As Object = OutlookMyList.Utils.OutlookUtils.SafeGetItemFromID(entryId)
+            If mailItem IsNot Nothing Then
+                Try
+                    ' 读取当前的自定义会话ID
+                    Dim currentCustomId As String = ReadCustomConversationIdFromItem(mailItem)
+
+                    ' 获取原始会话ID作为参考
+                    Dim originalConversationId As String = ""
+                    If TypeOf mailItem Is Outlook.MailItem Then
+                        originalConversationId = DirectCast(mailItem, Outlook.MailItem).ConversationID
+                    ElseIf TypeOf mailItem Is Outlook.AppointmentItem Then
+                        originalConversationId = DirectCast(mailItem, Outlook.AppointmentItem).ConversationID
+                    ElseIf TypeOf mailItem Is Outlook.MeetingItem Then
+                        originalConversationId = DirectCast(mailItem, Outlook.MeetingItem).ConversationID
+                    End If
+
+                    ' 构建提示信息
+                    Dim promptMessage As String = "请输入自定义会话ID：" & Environment.NewLine & Environment.NewLine
+                    promptMessage += $"原始会话ID: {originalConversationId}" & Environment.NewLine
+                    If Not String.IsNullOrEmpty(currentCustomId) Then
+                        promptMessage += $"当前自定义会话ID: {currentCustomId}" & Environment.NewLine
+                    Else
+                        promptMessage += "当前自定义会话ID: (未设置)" & Environment.NewLine
+                    End If
+                    promptMessage += Environment.NewLine & "留空则清除自定义会话ID"
+
+                    ' 显示输入对话框（旧逻辑被封装为不可执行）
+                    If False Then
+                        Dim newCustomId As String = InputBox(promptMessage, "设置自定义会话ID", currentCustomId)
+
+                    ' 如果用户点击了取消，InputBox 返回空字符串且用户没有输入任何内容
+                    ' 我们需要区分用户点击取消和用户输入空字符串
+                    If newCustomId <> currentCustomId Then
+                        If String.IsNullOrEmpty(newCustomId) Then
+                            ' 用户想要清除自定义会话ID
+                            Dim storeId As String = Nothing
+                            Try
+                                Dim parentFolder = TryCast(CallByName(mailItem, "Parent", CallType.Get), Outlook.MAPIFolder)
+                                If parentFolder IsNot Nothing AndAlso parentFolder.Store IsNot Nothing Then
+                                    storeId = parentFolder.Store.StoreID
+                                End If
+                            Catch
+                            End Try
+                            If SetCustomConversationIdByEntryID(entryId, "", storeId) Then
+                                MessageBox.Show("自定义会话ID已清除", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                                ' 刷新邮件列表以反映更改
+                                UpdateMailList(currentConversationId, entryId)
+                            Else
+                                MessageBox.Show("清除自定义会话ID失败", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                            End If
+                        Else
+                            ' 用户输入了新的自定义会话ID
+                            Dim storeId As String = Nothing
+                            Try
+                                Dim parentFolder = TryCast(CallByName(mailItem, "Parent", CallType.Get), Outlook.MAPIFolder)
+                                If parentFolder IsNot Nothing AndAlso parentFolder.Store IsNot Nothing Then
+                                    storeId = parentFolder.Store.StoreID
+                                End If
+                            Catch
+                            End Try
+                            If SetCustomConversationIdByEntryID(entryId, newCustomId.Trim(), storeId) Then
+                                MessageBox.Show($"自定义会话ID已设置为: {newCustomId.Trim()}", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                                ' 刷新邮件列表以反映更改
+                                UpdateMailList(currentConversationId, entryId)
+                            Else
+                                MessageBox.Show("设置自定义会话ID失败", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                            End If
+                        End If
+                    End If
+                    End If
+                    ' 新逻辑：使用自定义窗口以区分“确定”和“取消/关闭”
+                    Using dlg As New CustomConversationIdForm(originalConversationId, currentCustomId)
+                        Dim owner As IWin32Window = Me.FindForm()
+                        Dim result As DialogResult = dlg.ShowDialog(owner)
+
+                        ' 取消或关闭：不做改动
+                        If result <> DialogResult.OK Then
+                            Return
+                        End If
+
+                        Dim newCustomId2 As String = If(dlg.EnteredId, String.Empty)
+
+                        ' 未更改：不做改动
+                        If String.Equals(newCustomId2, currentCustomId) Then
+                            Return
+                        End If
+
+                        If String.IsNullOrWhiteSpace(newCustomId2) Then
+                            ' 用户确认清除自定义会话ID
+                            Dim storeId As String = Nothing
+                            Try
+                                Dim parentFolder = TryCast(CallByName(mailItem, "Parent", CallType.Get), Outlook.MAPIFolder)
+                                If parentFolder IsNot Nothing AndAlso parentFolder.Store IsNot Nothing Then
+                                    storeId = parentFolder.Store.StoreID
+                                End If
+                            Catch
+                            End Try
+                            If SetCustomConversationIdByEntryID(entryId, "", storeId) Then
+                                MessageBox.Show("自定义会话ID已清除", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                                UpdateMailList(currentConversationId, entryId)
+                            Else
+                                MessageBox.Show("清除自定义会话ID失败", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                            End If
+                        Else
+                            ' 用户确认设置新的自定义会话ID
+                            Dim storeId As String = Nothing
+                            Try
+                                Dim parentFolder = TryCast(CallByName(mailItem, "Parent", CallType.Get), Outlook.MAPIFolder)
+                                If parentFolder IsNot Nothing AndAlso parentFolder.Store IsNot Nothing Then
+                                    storeId = parentFolder.Store.StoreID
+                                End If
+                            Catch
+                            End Try
+                            Dim trimmedId As String = newCustomId2.Trim()
+                            If SetCustomConversationIdByEntryID(entryId, trimmedId, storeId) Then
+                                MessageBox.Show($"自定义会话ID已设置为: {trimmedId}", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                                UpdateMailList(currentConversationId, entryId)
+                            Else
+                                MessageBox.Show("设置自定义会话ID失败", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                            End If
+                        End If
+                    End Using
+                Finally
+                    OutlookMyList.Utils.OutlookUtils.SafeReleaseComObject(mailItem)
+                End Try
+            Else
+                MessageBox.Show("无法获取邮件项", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            End If
+        Catch ex As System.Exception
+            Debug.WriteLine($"CustomConversationId_Click error: {ex.Message}")
+            MessageBox.Show($"设置自定义会话ID时出错: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        End Try
+    End Sub
+
+
+
+    ''' <summary>
+    ''' 获取指定邮件所属会话中的所有邮件EntryID列表
+    ''' </summary>
+    ''' <param name="entryID">邮件的EntryID</param>
+    ''' <returns>会话中所有邮件的EntryID列表</returns>
+    Private Function GetAllMailsInConversation(entryID As String) As List(Of String)
+        Dim result As New List(Of String)
+        Dim mailItem As Object = Nothing
+        Dim conversation As Outlook.Conversation = Nothing
+        Dim table As Outlook.Table = Nothing
+
+        Try
+            ' 获取邮件项
+            mailItem = OutlookMyList.Utils.OutlookUtils.SafeGetItemFromID(entryID)
+            If mailItem Is Nothing Then
+                Debug.WriteLine($"GetAllMailsInConversation: 无法获取邮件项 {entryID}")
+                Return result
+            End If
+
+            ' 获取会话对象
+            If TypeOf mailItem Is Outlook.MailItem Then
+                conversation = DirectCast(mailItem, Outlook.MailItem).GetConversation()
+            ElseIf TypeOf mailItem Is Outlook.AppointmentItem Then
+                conversation = DirectCast(mailItem, Outlook.AppointmentItem).GetConversation()
+            ElseIf TypeOf mailItem Is Outlook.MeetingItem Then
+                conversation = DirectCast(mailItem, Outlook.MeetingItem).GetConversation()
+            End If
+
+            If conversation Is Nothing Then
+                Debug.WriteLine($"GetAllMailsInConversation: 无法获取会话对象")
+                ' 如果没有会话，只返回当前邮件的EntryID
+                result.Add(entryID)
+                Return result
+            End If
+
+            ' 获取会话中的所有邮件
+            table = conversation.GetTable()
+            table.Columns.RemoveAll()
+            ' 使用PR_ENTRYID获取长格式EntryID
+            table.Columns.Add("http://schemas.microsoft.com/mapi/proptag/0x0FFF0102")
+
+            Do Until table.EndOfTable
+                Dim row As Outlook.Row = Nothing
+                Try
+                    row = table.GetNextRow()
+                    Dim entryIdStr As String = ConvertEntryIDToString(row("http://schemas.microsoft.com/mapi/proptag/0x0FFF0102"))
+                    If Not String.IsNullOrEmpty(entryIdStr) Then
+                        result.Add(entryIdStr)
+                    End If
+                Finally
+                    If row IsNot Nothing Then
+                        Runtime.InteropServices.Marshal.ReleaseComObject(row)
+                    End If
+                End Try
+            Loop
+
+            Debug.WriteLine($"GetAllMailsInConversation: 找到 {result.Count} 个邮件")
+
+        Catch ex As System.Exception
+            Debug.WriteLine($"GetAllMailsInConversation error: {ex.Message}")
+        Finally
+            ' 释放COM对象
+            If table IsNot Nothing Then
+                Runtime.InteropServices.Marshal.ReleaseComObject(table)
+            End If
+            If conversation IsNot Nothing Then
+                Runtime.InteropServices.Marshal.ReleaseComObject(conversation)
+            End If
+            If mailItem IsNot Nothing Then
+                Runtime.InteropServices.Marshal.ReleaseComObject(mailItem)
+            End If
+        End Try
+
+        Return result
+    End Function
 
     ''' <summary>
     ''' 独立的联系人来往邮件信息处理方法，不依赖按钮状态

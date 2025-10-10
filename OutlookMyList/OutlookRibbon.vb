@@ -9,6 +9,9 @@ Public Class OutlookRibbon
         If Globals.ThisAddIn.MailThreadPaneInstance IsNot Nothing Then
             ToggleButtonPagination.Checked = Globals.ThisAddIn.MailThreadPaneInstance.IsPaginationEnabled
         End If
+
+        ' 同步缓存开关按钮状态
+        ToggleButtonCacheEnabled.Checked = Globals.ThisAddIn.CacheEnabled
     End Sub
 
     Private Sub ToggleButton1_Click(sender As Object, e As RibbonControlEventArgs) Handles ToggleButton1.Click
@@ -31,34 +34,37 @@ Public Class OutlookRibbon
         End Try
     End Sub
 
-    Private Sub ToggleButtonBottomPane_Click(sender As Object, e As RibbonControlEventArgs) Handles ToggleButtonBottomPane.Click
-        Globals.ThisAddIn.ToggleBottomPane()
-        ' 更新按钮状态
-        ToggleButtonBottomPane.Checked = Globals.ThisAddIn.IsBottomPaneVisible
+    Private Sub ToggleButtonCacheEnabled_Click(sender As Object, e As RibbonControlEventArgs) Handles ToggleButtonCacheEnabled.Click
+        ' 切换缓存开关
+        Globals.ThisAddIn.SaveCacheEnabledToRegistry(ToggleButtonCacheEnabled.Checked)
     End Sub
 
-    Private Sub ButtonMinimizeBottomPane_Click(sender As Object, e As RibbonControlEventArgs) Handles ButtonMinimizeBottomPane.Click
-        Globals.ThisAddIn.MinimizeBottomPane()
-        ' 更新按钮文本
-        If Globals.ThisAddIn.BottomPaneInstance IsNot Nothing Then
-            ButtonMinimizeBottomPane.Label = If(Globals.ThisAddIn.BottomPaneInstance.IsMinimized, "还原", "最小化")
-        End If
+    Private Sub ButtonMergeConversation_Click(sender As Object, e As RibbonControlEventArgs) Handles ButtonMergeConversation.Click
+        ' 最简单方式：直接复用合并逻辑
+        Globals.ThisAddIn.HandleMergeCustomConversation()
     End Sub
 
-    ' 更新底部面板按钮状态的公共方法
-    Public Sub UpdateBottomPaneButtonState(visible As Boolean, minimized As Boolean)
+    ' 更新“合并自定义会话”按钮的启用状态
+    Public Sub UpdateMergeButtonState(enabled As Boolean)
         Try
-            ToggleButtonBottomPane.Checked = visible
-            ButtonMinimizeBottomPane.Label = If(minimized, "还原", "最小化")
+            ButtonMergeConversation.Enabled = enabled
         Catch ex As Exception
-            Debug.WriteLine($"Error updating bottom pane button state: {ex.Message}")
+            Debug.WriteLine($"Error updating merge button state: {ex.Message}")
         End Try
     End Sub
 
-    Private Sub ToggleButtonEmbeddedPane_Click(sender As Object, e As RibbonControlEventArgs) Handles ToggleButtonEmbeddedPane.Click
-        Globals.ThisAddIn.ToggleEmbeddedBottomPane()
-        ' 更新按钮状态
-        ToggleButtonEmbeddedPane.Checked = Globals.ThisAddIn.IsEmbeddedBottomPaneVisible
+    ' 加载时根据当前选择初始化按钮状态
+    Private Sub OutlookRibbon_AfterLoad() Handles MyBase.Load
+        Try
+            Dim explorer = Globals.ThisAddIn.Application?.ActiveExplorer
+            Dim selCount As Integer = 0
+            If explorer IsNot Nothing Then
+                selCount = explorer.Selection.Count
+            End If
+            ButtonMergeConversation.Enabled = (selCount >= 2)
+        Catch
+            ' 忽略初始化异常，避免影响Ribbon显示
+        End Try
     End Sub
 
 End Class

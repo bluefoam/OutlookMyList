@@ -5,6 +5,50 @@ Imports System.Drawing
 
 Namespace OutlookMyList.Handlers
     Public Class TaskHandler
+        ' 安全转换辅助：将对象安全转换为整数
+        Private Shared Function SafeToInt(value As Object, defaultValue As Integer) As Integer
+            Try
+                If value Is Nothing Then Return defaultValue
+                If TypeOf value Is Integer Then Return DirectCast(value, Integer)
+                If TypeOf value Is Short Then Return CInt(DirectCast(value, Short))
+                If TypeOf value Is Long Then Return CInt(Math.Min(Integer.MaxValue, Math.Max(Integer.MinValue, DirectCast(value, Long))))
+                If TypeOf value Is Double Then Return CInt(DirectCast(value, Double))
+                If TypeOf value Is Single Then Return CInt(DirectCast(value, Single))
+                Dim s As String = value.ToString().Trim()
+                If String.IsNullOrEmpty(s) Then Return defaultValue
+                If s.EndsWith("%") Then s = s.Substring(0, s.Length - 1)
+                Dim result As Integer
+                If Integer.TryParse(s, result) Then Return result
+            Catch
+            End Try
+            Return defaultValue
+        End Function
+
+        ' 安全转换辅助：将对象安全转换为 OlTaskStatus
+        Private Shared Function SafeToOlTaskStatus(value As Object, defaultStatus As OlTaskStatus) As OlTaskStatus
+            Try
+                If value Is Nothing Then Return defaultStatus
+                If TypeOf value Is Integer Then Return CType(value, OlTaskStatus)
+                Dim s As String = value.ToString().Trim()
+                If String.IsNullOrEmpty(s) Then Return defaultStatus
+                Dim intVal As Integer
+                If Integer.TryParse(s, intVal) Then Return CType(intVal, OlTaskStatus)
+                Select Case s.ToLowerInvariant()
+                    Case "未开始", "notstarted", "not started"
+                        Return OlTaskStatus.olTaskNotStarted
+                    Case "进行中", "inprogress", "in progress"
+                        Return OlTaskStatus.olTaskInProgress
+                    Case "已完成", "complete", "completed"
+                        Return OlTaskStatus.olTaskComplete
+                    Case "等待中", "waiting"
+                        Return OlTaskStatus.olTaskWaiting
+                    Case "已推迟", "deferred"
+                        Return OlTaskStatus.olTaskDeferred
+                End Select
+            Catch
+            End Try
+            Return defaultStatus
+        End Function
         ''' <summary>
         ''' 应用主题到ListView项目
         ''' </summary>
@@ -82,15 +126,15 @@ Namespace OutlookMyList.Handlers
                 Dim mailItem As MailItem = GetMailItem(mailEntryID)
                 If mailItem IsNot Nothing Then
                     Try
-                        If mailItem.IsMarkedAsTask Then
+                            If mailItem.IsMarkedAsTask Then
                             ' 创建基于邮件标记的任务信息
                             Dim taskInfo As New OutlookMyList.Models.TaskInfo With {
                                 .Subject = mailItem.TaskSubject,
                                 .MailEntryID = mailEntryID,
                                 .RelatedMailSubject = mailItem.Subject,
-                                .DueDate = mailItem.TaskDueDate,
+                                .DueDate = If(mailItem.TaskDueDate = DateTime.MinValue, Nothing, mailItem.TaskDueDate),
                                 .Status = GetTaskStatusText(mailItem.TaskStatus),
-                                .PercentComplete = mailItem.TaskCompletedDate.CompareTo(DateTime.MinValue)
+                                .PercentComplete = mailItem.PercentComplete
                             }
                             Return taskInfo
                         End If
@@ -374,10 +418,8 @@ Namespace OutlookMyList.Handlers
                                     .RelatedMailSubject = mail.Subject,
                                     .DueDate = If(props("TaskDueDate")?.Value IsNot Nothing,
                                                 CDate(props("TaskDueDate").Value), Nothing),
-                                    .Status = If(props("TaskStatus")?.Value IsNot Nothing,
-                                               props("TaskStatus").Value.ToString(), "未开始"),
-                                    .PercentComplete = If(props("TaskComplete")?.Value IsNot Nothing,
-                                                        CInt(props("TaskComplete").Value), 0)
+                                    .Status = GetTaskStatusText(SafeToOlTaskStatus(props("TaskStatus")?.Value, OlTaskStatus.olTaskNotStarted)),
+                                    .PercentComplete = SafeToInt(props("TaskComplete")?.Value, 0)
                                 })
                             End If
                         Catch ex As System.Runtime.InteropServices.COMException
@@ -477,8 +519,8 @@ Namespace OutlookMyList.Handlers
                 Dim listItem As New ListViewItem(props("TaskSubject").Value.ToString())
                 listItem.SubItems.Add(If(props("TaskDueDate").Value Is Nothing, "",
                                        CDate(props("TaskDueDate").Value).ToString("yyyy-MM-dd")))
-                listItem.SubItems.Add(GetTaskStatusText(CInt(props("TaskStatus").Value)))
-                listItem.SubItems.Add($"{props("TaskComplete").Value}%")
+                listItem.SubItems.Add(GetTaskStatusText(SafeToOlTaskStatus(props("TaskStatus")?.Value, OlTaskStatus.olTaskNotStarted)))
+                listItem.SubItems.Add($"{SafeToInt(props("TaskComplete")?.Value, 0)}%")
                 listItem.SubItems.Add("(邮件标记任务)")
                 Dim storeId As String = Nothing
                 Try

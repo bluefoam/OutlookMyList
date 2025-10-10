@@ -35,9 +35,8 @@ Partial Class OutlookRibbon
         Me.Group1 = Me.Factory.CreateRibbonGroup
         Me.ToggleButton1 = Me.Factory.CreateRibbonToggleButton
         Me.ToggleButtonPagination = Me.Factory.CreateRibbonToggleButton
-        Me.ToggleButtonBottomPane = Me.Factory.CreateRibbonToggleButton
-        Me.ButtonMinimizeBottomPane = Me.Factory.CreateRibbonButton
-        Me.ToggleButtonEmbeddedPane = Me.Factory.CreateRibbonToggleButton
+        Me.ToggleButtonCacheEnabled = Me.Factory.CreateRibbonToggleButton
+        Me.ButtonMergeConversation = Me.Factory.CreateRibbonButton
         Me.Tab1.SuspendLayout()
         Me.Group1.SuspendLayout()
         Me.SuspendLayout()
@@ -54,9 +53,8 @@ Partial Class OutlookRibbon
         '
         Me.Group1.Items.Add(Me.ToggleButton1)
         Me.Group1.Items.Add(Me.ToggleButtonPagination)
-        Me.Group1.Items.Add(Me.ToggleButtonBottomPane)
-        Me.Group1.Items.Add(Me.ButtonMinimizeBottomPane)
-        Me.Group1.Items.Add(Me.ToggleButtonEmbeddedPane)
+        Me.Group1.Items.Add(Me.ToggleButtonCacheEnabled)
+        Me.Group1.Items.Add(Me.ButtonMergeConversation)
         Me.Group1.Label = "视图"
         Me.Group1.Name = "Group1"
         '
@@ -73,25 +71,17 @@ Partial Class OutlookRibbon
         Me.ToggleButtonPagination.ScreenTip = "切换邮件列表分页功能"
         Me.ToggleButtonPagination.Checked = False
         '
-        'ToggleButtonBottomPane
+        'ToggleButtonCacheEnabled
         '
-        Me.ToggleButtonBottomPane.Label = "底部面板"
-        Me.ToggleButtonBottomPane.Name = "ToggleButtonBottomPane"
-        Me.ToggleButtonBottomPane.ScreenTip = "显示/隐藏底部插件面板"
-        Me.ToggleButtonBottomPane.Checked = False
-        '
-        'ButtonMinimizeBottomPane
-        '
-        Me.ButtonMinimizeBottomPane.Label = "最小化"
-        Me.ButtonMinimizeBottomPane.Name = "ButtonMinimizeBottomPane"
-        Me.ButtonMinimizeBottomPane.ScreenTip = "最小化/还原底部面板"
-        '
-        'ToggleButtonEmbeddedPane
-        '
-        Me.ToggleButtonEmbeddedPane.Label = "嵌入面板"
-        Me.ToggleButtonEmbeddedPane.Name = "ToggleButtonEmbeddedPane"
-        Me.ToggleButtonEmbeddedPane.ScreenTip = "显示/隐藏嵌入式底部面板（实验性功能）"
-        Me.ToggleButtonEmbeddedPane.Checked = False
+        Me.ToggleButtonCacheEnabled.Label = "缓存开启"
+        Me.ToggleButtonCacheEnabled.Name = "ToggleButtonCacheEnabled"
+        Me.ToggleButtonCacheEnabled.ScreenTip = "开启/关闭缓存策略"
+        Me.ToggleButtonCacheEnabled.Checked = True
+
+        'ButtonMergeConversation
+        Me.ButtonMergeConversation.Label = "合并自定义会话"
+        Me.ButtonMergeConversation.Name = "ButtonMergeConversation"
+        Me.ButtonMergeConversation.ScreenTip = "将所选邮件合并到同一自定义会话"
         '
         'OutlookRibbon
         '
@@ -110,9 +100,8 @@ Partial Class OutlookRibbon
     Friend WithEvents Group1 As Microsoft.Office.Tools.Ribbon.RibbonGroup
     Friend WithEvents ToggleButton1 As Microsoft.Office.Tools.Ribbon.RibbonToggleButton
     Friend WithEvents ToggleButtonPagination As Microsoft.Office.Tools.Ribbon.RibbonToggleButton
-    Friend WithEvents ToggleButtonBottomPane As Microsoft.Office.Tools.Ribbon.RibbonToggleButton
-    Friend WithEvents ButtonMinimizeBottomPane As Microsoft.Office.Tools.Ribbon.RibbonButton
-    Friend WithEvents ToggleButtonEmbeddedPane As Microsoft.Office.Tools.Ribbon.RibbonToggleButton
+    Friend WithEvents ToggleButtonCacheEnabled As Microsoft.Office.Tools.Ribbon.RibbonToggleButton
+    Friend WithEvents ButtonMergeConversation As Microsoft.Office.Tools.Ribbon.RibbonButton
 End Class
 
 Partial Class ThisRibbonCollection
