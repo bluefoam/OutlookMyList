@@ -32,6 +32,23 @@ Public Class Win32Helper
     Public Shared Function EnumChildWindows(hWndParent As IntPtr, lpEnumFunc As EnumWindowsProc, lParam As IntPtr) As Boolean
     End Function
 
+    ' 鼠标光标相关API
+    <DllImport("user32.dll", SetLastError:=True)>
+    Public Shared Function LoadCursor(hInstance As IntPtr, lpCursorName As IntPtr) As IntPtr
+    End Function
+
+    <DllImport("user32.dll", SetLastError:=True)>
+    Public Shared Function SetCursor(hCursor As IntPtr) As IntPtr
+    End Function
+
+    <DllImport("user32.dll", SetLastError:=True)>
+    Public Shared Function ShowCursor(bShow As Boolean) As Integer
+    End Function
+
+    <DllImport("user32.dll", SetLastError:=True)>
+    Public Shared Function SystemParametersInfo(uiAction As UInteger, uiParam As UInteger, pvParam As IntPtr, fWinIni As UInteger) As Boolean
+    End Function
+
     Public Delegate Function EnumWindowsProc(hWnd As IntPtr, lParam As IntPtr) As Boolean
 
     ' 常量定义
@@ -39,6 +56,12 @@ Public Class Win32Helper
     Public Const SWP_NOACTIVATE As UInteger = &H10
     Public Const SWP_SHOWWINDOW As UInteger = &H40
     Public Shared ReadOnly HWND_TOP As IntPtr = New IntPtr(0)
+
+    ' 鼠标光标相关常量
+    Public Shared ReadOnly IDC_ARROW As IntPtr = New IntPtr(32512)
+    Public Const SPI_SETCURSORS As UInteger = &H57
+    Public Const SPIF_UPDATEINIFILE As UInteger = &H1
+    Public Const SPIF_SENDCHANGE As UInteger = &H2
 
     ' 结构体定义
     <StructLayout(LayoutKind.Sequential)>
@@ -191,4 +214,37 @@ Public Class Win32Helper
             Return False
         End Try
     End Function
+
+    ' 恢复系统默认鼠标光标
+    Public Shared Sub RestoreSystemCursors()
+        Try
+            System.Diagnostics.Debug.WriteLine("开始恢复系统鼠标光标...")
+            
+            ' 方法1: 重新加载默认箭头光标
+            Dim defaultCursor As IntPtr = LoadCursor(IntPtr.Zero, IDC_ARROW)
+            If defaultCursor <> IntPtr.Zero Then
+                SetCursor(defaultCursor)
+                System.Diagnostics.Debug.WriteLine("已设置默认箭头光标")
+            End If
+            
+            ' 方法2: 确保鼠标光标可见
+            Dim cursorCount As Integer = ShowCursor(True)
+            System.Diagnostics.Debug.WriteLine($"鼠标光标显示计数: {cursorCount}")
+            
+            ' 如果计数小于0，继续调用ShowCursor(True)直到计数>=0
+            While cursorCount < 0
+                cursorCount = ShowCursor(True)
+                System.Diagnostics.Debug.WriteLine($"调整鼠标光标显示计数: {cursorCount}")
+            End While
+            
+            ' 方法3: 刷新系统光标设置
+            SystemParametersInfo(SPI_SETCURSORS, 0, IntPtr.Zero, SPIF_UPDATEINIFILE Or SPIF_SENDCHANGE)
+            System.Diagnostics.Debug.WriteLine("已刷新系统光标设置")
+            
+            System.Diagnostics.Debug.WriteLine("系统鼠标光标恢复完成")
+            
+        Catch ex As Exception
+            System.Diagnostics.Debug.WriteLine($"恢复系统鼠标光标时出错: {ex.Message}")
+        End Try
+    End Sub
 End Class

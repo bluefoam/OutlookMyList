@@ -126,19 +126,36 @@ Namespace OutlookMyList.Handlers
                 Dim fgColor As String = MailThreadPane.globalThemeForegroundColor
                 Dim accentColor As String = MailThreadPane.globalThemeAccentColor
                 
-                ' 检查是否为默认的白色主题，如果是则强制刷新主题
+                ' 检查是否为默认的白色主题，如果是则使用安全的默认值，避免在后台线程中刷新主题
                 If bgColor = "#ffffff" AndAlso fgColor = "#000000" AndAlso MailThreadPane.globalThemeLastUpdate = DateTime.MinValue Then
-                    Debug.WriteLine("[DisplayMailContent] 检测到默认主题，强制刷新主题设置")
+                    Debug.WriteLine("[DisplayMailContent] 检测到默认主题，使用安全的默认主题值，避免在后台线程中刷新主题")
+                    ' 使用安全的默认主题值，避免在后台线程中调用RefreshTheme导致COM异常
+                    ' 主题刷新应该在主线程中进行，这里只使用默认值
+                    bgColor = "#ffffff"  ' 白色背景
+                    fgColor = "#000000"  ' 黑色文字
+                    accentColor = "#0078d4"  ' 蓝色强调色
+                    Debug.WriteLine($"[DisplayMailContent] 使用默认主题值: 背景={bgColor}, 前景={fgColor}")
+                    
+                    ' 异步通知主线程进行主题刷新，但不等待结果
                     Try
-                        ' 强制刷新主题
-                         Globals.ThisAddIn.RefreshTheme()
-                        ' 重新获取主题变量
-                        bgColor = MailThreadPane.globalThemeBackgroundColor
-                        fgColor = MailThreadPane.globalThemeForegroundColor
-                        accentColor = MailThreadPane.globalThemeAccentColor
-                        Debug.WriteLine($"[DisplayMailContent] 主题刷新后: 背景={bgColor}, 前景={fgColor}")
+                        System.Threading.Tasks.Task.Run(Sub()
+                             Try
+                                 ' 在主线程中异步刷新主题
+                                 If Globals.ThisAddIn.MailThreadPaneInstance IsNot Nothing AndAlso Globals.ThisAddIn.MailThreadPaneInstance.IsHandleCreated Then
+                                     Globals.ThisAddIn.MailThreadPaneInstance.BeginInvoke(Sub()
+                                         Try
+                                             Globals.ThisAddIn.RefreshTheme()
+                                         Catch ex As System.Exception
+                                             Debug.WriteLine($"[DisplayMailContent] 异步主题刷新失败: {ex.Message}")
+                                         End Try
+                                     End Sub)
+                                 End If
+                             Catch ex As System.Exception
+                                 Debug.WriteLine($"[DisplayMailContent] 异步主题刷新调度失败: {ex.Message}")
+                             End Try
+                         End Sub)
                     Catch ex As System.Exception
-                        Debug.WriteLine($"[DisplayMailContent] 主题刷新失败: {ex.Message}")
+                        Debug.WriteLine($"[DisplayMailContent] 启动异步主题刷新失败: {ex.Message}")
                     End Try
                 End If
                 
@@ -149,6 +166,12 @@ Namespace OutlookMyList.Handlers
                 Debug.WriteLine($"  强调色: {accentColor}")
                 Debug.WriteLine($"  最后更新时间: {MailThreadPane.globalThemeLastUpdate}")
                 
+                ' 检查邮件项是否已完全加载
+                If Not OutlookUtils.IsMailItemReady(mailItem) Then
+                    Debug.WriteLine("邮件项未完全加载，跳过内容提取")
+                    Return "<html><body><p>邮件内容加载中...</p></body></html>"
+                End If
+
                 Try
                     Dim subject As String = If(String.IsNullOrEmpty(mailItem.Subject), "无主题", mailItem.Subject)
                     Dim senderName As String = If(String.IsNullOrEmpty(mailItem.SenderName), "未知", mailItem.SenderName)
@@ -435,7 +458,9 @@ Namespace OutlookMyList.Handlers
             })
         Catch ex As System.Exception
             Debug.WriteLine($"打开链接出错: {ex.Message}")
-            MessageBox.Show("无法打开链接，请手动复制链接地址到浏览器中打开。")
+            If ErrorNotificationSettings.Instance.ShowErrorDialogs Then
+                MessageBox.Show("无法打开链接，请手动复制链接地址到浏览器中打开。")
+            End If
         End Try
     End Sub
 End Class

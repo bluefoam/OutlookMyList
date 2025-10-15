@@ -9,7 +9,7 @@ Public Class ErrorNotificationSettings
     ''' <summary>
     ''' 是否显示错误提醒对话框
     ''' </summary>
-    Public Property ShowErrorDialogs As Boolean = True
+    Public Property ShowErrorDialogs As Boolean = False
     
     ''' <summary>
     ''' 是否只显示第一次错误提醒
@@ -97,7 +97,7 @@ Public Class ErrorNotificationSettings
     ''' 重置为默认设置
     ''' </summary>
     Public Sub ResetToDefaults()
-        ShowErrorDialogs = True
+        ShowErrorDialogs = False
         ShowOnlyFirstError = True
         LogErrorsToDebug = True
         ShowCOMErrorDialogs = False

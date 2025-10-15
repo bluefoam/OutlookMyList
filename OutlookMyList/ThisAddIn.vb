@@ -34,7 +34,7 @@ Public Class ThisAddIn
     
     ' 添加Inspector防重复调用变量（以Inspector为粒度进行防重）
     Private inspectorUpdateHistory As New Dictionary(Of String, DateTime)
-    Private Const InspectorUpdateThreshold As Integer = 1000 ' 毫秒，Inspector更新阈值更长
+    Private Const InspectorUpdateThreshold As Integer = 2000 ' 毫秒，Inspector更新阈值更长
 
     ' 添加防重复调用变量
     Private lastUpdateTime As DateTime = DateTime.MinValue
@@ -48,6 +48,11 @@ Public Class ThisAddIn
 
     ' 全局缓存开关
     Public Property CacheEnabled As Boolean = True
+    
+    ' Inspector错误显示控制变量
+    Private hasShownInspectorCOMError As Boolean = False
+    Private hasShownInspectorError As Boolean = False
+    Public Shared HasShownMailOpenError As Boolean = False
     
     ' 错误提醒配置
     Public Shared ReadOnly Property ErrorSettings As ErrorNotificationSettings
@@ -66,6 +71,27 @@ Public Class ThisAddIn
             _hasShownMailOpenError = value
         End Set
     End Property
+    
+    ' 统一的错误显示方法
+    Public Shared Sub ShowErrorWithConfig(title As String, message As String)
+        Try
+            If Not ErrorSettings.ShowErrorDialogs Then
+                Return
+            End If
+            
+            If ErrorSettings.ShowOnlyFirstError Then
+                If Not HasShownMailOpenError Then
+                    HasShownMailOpenError = True
+                    MessageBox.Show($"{title}：{message}，后续类似错误将被静默处理。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                End If
+            Else
+                MessageBox.Show($"{title}：{message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            End If
+        Catch ex As Exception
+            ' 防止错误显示本身出错
+            Debug.WriteLine($"显示错误对话框时出错: {ex.Message}")
+        End Sub
+    End Sub
     
     ' 添加CommandBar相关变量
     Private mergeConversationButton As Microsoft.Office.Core.CommandBarButton
@@ -191,13 +217,17 @@ Public Class ThisAddIn
         Try
             ' 获取当前选中的邮件
             If currentExplorer Is Nothing OrElse currentExplorer.Selection.Count = 0 Then
-                MessageBox.Show("请先选择要合并的邮件。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                If ErrorNotificationSettings.Instance.ShowErrorDialogs Then
+                    MessageBox.Show("请先选择要合并的邮件。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                End If
                 Return
             End If
 
             ' 检查是否选择了多个邮件
             If currentExplorer.Selection.Count < 2 Then
-                MessageBox.Show("请选择至少两个邮件进行合并。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                If ErrorNotificationSettings.Instance.ShowErrorDialogs Then
+                    MessageBox.Show("请选择至少两个邮件进行合并。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                End If
                 Return
             End If
 
@@ -251,7 +281,7 @@ Public Class ThisAddIn
             End If
 
             If String.IsNullOrEmpty(targetConversationId) Then
-                MessageBox.Show("无法确定目标会话ID。", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                ShowErrorWithConfig("无法确定目标会话ID", "合并会话失败")
                 Return
             End If
 
@@ -325,16 +355,18 @@ Public Class ThisAddIn
             mailThreadPane.HideProgress()
 
             ' 显示结果
-            Dim message As String = $"合并完成！" & vbCrLf &
-                                  $"成功处理: {processedCount} 个邮件" & vbCrLf &
-                                  $"失败: {errorCount} 个邮件"
+            If ErrorNotificationSettings.Instance.ShowErrorDialogs Then
+                Dim message As String = $"合并完成！" & vbCrLf &
+                                      $"成功处理: {processedCount} 个邮件" & vbCrLf &
+                                      $"失败: {errorCount} 个邮件"
 
-            If errorCount > 0 Then
-                message &= vbCrLf & vbCrLf & "部分邮件可能由于权限或其他原因无法修改。"
+                If errorCount > 0 Then
+                    message &= vbCrLf & vbCrLf & "部分邮件可能由于权限或其他原因无法修改。"
+                End If
+
+                MessageBox.Show(message, "合并结果", MessageBoxButtons.OK, 
+                              If(errorCount = 0, MessageBoxIcon.Information, MessageBoxIcon.Warning))
             End If
-
-            MessageBox.Show(message, "合并结果", MessageBoxButtons.OK, 
-                          If(errorCount = 0, MessageBoxIcon.Information, MessageBoxIcon.Warning))
 
             ' 强制刷新邮件列表
             If mailThreadPane IsNot Nothing AndAlso currentExplorer IsNot Nothing AndAlso currentExplorer.Selection.Count > 0 Then
@@ -352,8 +384,14 @@ Public Class ThisAddIn
             End If
 
         Catch ex As Exception
-            MessageBox.Show($"合并会话时发生错误: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
-            Debug.WriteLine($"HandleMergeCustomConversation错误: {ex.Message}")
+            ' 记录调试信息
+            If ErrorNotificationSettings.Instance.LogErrorsToDebug Then
+                Debug.WriteLine($"HandleMergeCustomConversation错误: {ex.Message}")
+            End If
+            
+            ' 统一错误处理
+            ShowErrorWithConfig("合并会话时发生错误", ex.Message)
+            
             Try
                 LogException(ex, "HandleMergeCustomConversation")
             Catch
@@ -365,13 +403,17 @@ Public Class ThisAddIn
         Try
             ' 获取当前选中的邮件
             If currentExplorer Is Nothing OrElse currentExplorer.Selection.Count = 0 Then
-                MessageBox.Show("请先选择要合并的邮件。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                If ErrorNotificationSettings.Instance.ShowErrorDialogs Then
+                    MessageBox.Show("请先选择要合并的邮件。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                End If
                 Return
             End If
             
             ' 检查是否选择了多个邮件
             If currentExplorer.Selection.Count < 2 Then
-                MessageBox.Show("请选择至少两个邮件进行合并。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                If ErrorNotificationSettings.Instance.ShowErrorDialogs Then
+                    MessageBox.Show("请选择至少两个邮件进行合并。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                End If
                 Return
             End If
             
@@ -427,12 +469,12 @@ Public Class ThisAddIn
                     End If
                 End If
             Else
-                MessageBox.Show("合并操作失败，无法确定目标会话ID。", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                ShowErrorWithConfig("合并操作失败，无法确定目标会话ID", "合并会话失败")
             End If
         Catch ex As Exception
             ' 记录错误并显示错误消息
             Debug.WriteLine($"MergeConversationButton_Click错误: {ex.Message}")
-            MessageBox.Show($"合并会话时发生错误: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            ShowErrorWithConfig("合并会话时发生错误", ex.Message)
             
             ' 隐藏进度条（如果已显示）
             Try
@@ -563,6 +605,13 @@ Public Class ThisAddIn
             bottomPane.Dispose()
         End If
         
+        ' 恢复系统鼠标光标状态，防止影响其他Office应用
+        Try
+            Win32Helper.RestoreSystemCursors()
+            Debug.WriteLine("已恢复系统鼠标光标状态")
+        Catch ex As Exception
+            Debug.WriteLine($"恢复系统鼠标光标时出错: {ex.Message}")
+        End Try
 
     End Sub
 
@@ -728,27 +777,113 @@ Public Class ThisAddIn
                 End If
             End If
         Catch ex As System.Runtime.InteropServices.COMException
-            ' COM异常静默处理，只记录调试信息
-            Debug.WriteLine($"Inspectors_NewInspector COM异常 (HRESULT: {ex.HResult:X8}): {ex.Message}")
-            If Not HasShownMailOpenError Then
-                 HasShownMailOpenError = True
-                ' 第一次错误时可以选择显示提示
-                ' MessageBox.Show("创建邮件窗口时遇到问题，后续类似错误将被静默处理。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            ' 记录调试信息
+            If ErrorNotificationSettings.Instance.LogErrorsToDebug Then
+                Debug.WriteLine($"Inspectors_NewInspector COM异常 (HRESULT: {ex.HResult:X8}): {ex.Message}")
+            End If
+            
+            ' 根据配置决定是否显示COM错误
+            If ErrorNotificationSettings.Instance.ShowCOMErrorDialogs Then
+                ShowErrorWithConfig("创建邮件窗口时遇到COM问题", ex.Message)
             End If
         Catch ex As Exception
-            Debug.WriteLine($"Inspectors_NewInspector 异常: {ex.Message}")
-            If Not HasShownMailOpenError Then
-                 HasShownMailOpenError = True
-                 ' 第一次错误时显示提示，后续静默处理
-                 MessageBox.Show("创建邮件窗口时遇到问题，后续类似错误将被静默处理。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            ' 记录调试信息
+            If ErrorNotificationSettings.Instance.LogErrorsToDebug Then
+                Debug.WriteLine($"Inspectors_NewInspector 异常: {ex.Message}")
+            End If
+            
+            ' 根据配置决定是否显示错误
+            If ErrorNotificationSettings.Instance.ShowErrorDialogs Then
+                ShowErrorWithConfig("创建邮件窗口时遇到问题", ex.Message)
             End If
         End Try
+    End Sub
+
+    ' 延迟重试更新邮件内容 - 增强版，增加更智能的加载检测
+    Private Sub DelayedUpdateInspectorMailContent(inspector As Outlook.Inspector, inspectorPane As MailThreadPane, retryCount As Integer)
+        If retryCount <= 0 OrElse inspectorPane Is Nothing Then Return
+        
+        Dim retryDelay As Integer = 1500 ' 增加到每次重试延迟1500ms，给邮件更多加载时间
+        
+        Dim retryTimer As New System.Timers.Timer(retryDelay)
+        AddHandler retryTimer.Elapsed, Sub(sender, e)
+                                           retryTimer.Stop()
+                                           retryTimer.Dispose()
+                                           
+                                           Try
+                                               If inspector IsNot Nothing AndAlso inspectorPane IsNot Nothing Then
+                                                   Dim mailItem As Object = Nothing
+                                                   
+                                                   ' 安全获取邮件对象，避免直接访问可能已释放的对象
+                                                   Try
+                                                       mailItem = inspector.CurrentItem
+                                                       If mailItem Is Nothing Then
+                                                           Debug.WriteLine("延迟更新: 无法获取 CurrentItem，可能Inspector已关闭")
+                                                           Return
+                                                       End If
+                                                   Catch ex As System.Runtime.InteropServices.COMException
+                                                       Debug.WriteLine($"延迟更新: 获取 CurrentItem 时 COM 异常 (HRESULT: {ex.HResult:X8}): {ex.Message}")
+                                                       Return
+                                                   Catch ex As System.Exception
+                                                       Debug.WriteLine($"延迟更新: 获取 CurrentItem 时异常: {ex.Message}")
+                                                       Return
+                                                   End Try
+                                                   
+                                                   ' 更智能的邮件加载检测，不仅检查EntryID，还检查关键属性
+                                                   If IsMailItemFullyLoaded(mailItem) AndAlso IsMailItemReady(mailItem) Then
+                                                       Debug.WriteLine($"延迟更新: 邮件对象已完全加载，开始更新，剩余重试次数：{retryCount}")
+                                                       UpdateInspectorMailContent(mailItem, inspectorPane)
+                                                   ElseIf retryCount > 1
+                                                       Debug.WriteLine($"延迟更新: 邮件对象仍未完全加载，剩余重试次数：{retryCount - 1}")
+                                                       DelayedUpdateInspectorMailContent(inspector, inspectorPane, retryCount - 1)
+                                                   Else
+                                                       Debug.WriteLine("延迟更新: 邮件对象加载超时，放弃此次更新")
+                                                       ' 最后一次重试时，即使未完全加载也尝试更新，避免无限等待
+                                                       Try
+                                                           UpdateInspectorMailContent(mailItem, inspectorPane)
+                                                       Catch finalEx As System.Exception
+                                                           Debug.WriteLine($"延迟更新: 最终尝试更新失败: {finalEx.Message}")
+                                                       End Try
+                                                   End If
+                                               End If
+                                           Catch ex As System.Exception
+                                               Debug.WriteLine($"延迟更新重试异常: {ex.Message}")
+                                           End Try
+                                       End Sub
+        retryTimer.AutoReset = False
+        retryTimer.Start()
     End Sub
 
     ' Handle Inspector activate event
     Private Sub InspectorActivate(inspector As Outlook.Inspector, inspectorPane As MailThreadPane, inspectorId As String)
         Try
-            Dim mailItem As Object = inspector.CurrentItem
+            ' 基础参数验证
+            If inspector Is Nothing Then
+                Debug.WriteLine("InspectorActivate: inspector 参数为 Nothing")
+                Return
+            End If
+            
+            If inspectorPane Is Nothing Then
+                Debug.WriteLine("InspectorActivate: inspectorPane 参数为 Nothing")
+                Return
+            End If
+
+            Dim mailItem As Object = Nothing
+            
+            ' 安全获取邮件对象，添加异常保护
+            Try
+                mailItem = inspector.CurrentItem
+                If mailItem Is Nothing Then
+                    Debug.WriteLine("InspectorActivate: 无法获取 CurrentItem")
+                    Return
+                End If
+            Catch ex As System.Runtime.InteropServices.COMException
+                Debug.WriteLine($"InspectorActivate: 获取 CurrentItem 时 COM 异常 (HRESULT: {ex.HResult:X8}): {ex.Message}")
+                Return
+            Catch ex As System.Exception
+                Debug.WriteLine($"InspectorActivate: 获取 CurrentItem 时异常: {ex.Message}")
+                Return
+            End Try
 
             ' 根据 Inspector 粒度进行防抖：短时间内重复激活只更新一次
             Dim now As DateTime = DateTime.Now
@@ -762,44 +897,164 @@ Public Class ThisAddIn
             inspectorUpdateHistory(inspectorId) = now
 
             ' 抑制期间不进行内容更新，避免 ContactInfoTree 构造时触发 WebView 刷新
-            If inspectorPane Is Nothing OrElse inspectorPane.IsWebViewUpdateSuppressed Then Return
+            If inspectorPane.IsWebViewUpdateSuppressed Then
+                Debug.WriteLine("InspectorActivate: WebView 更新被抑制，跳过更新")
+                Return
+            End If
+            
+            ' 检查邮件对象是否已完全加载
+            If Not IsMailItemFullyLoaded(mailItem) Then
+                Debug.WriteLine($"InspectorActivate: 邮件对象尚未完全加载，类型: {mailItem.GetType().Name}，启动延迟重试机制")
+                ' 启动延迟重试，最多重试3次
+                DelayedUpdateInspectorMailContent(inspector, inspectorPane, 3)
+                Return
+            End If
+            
+            Debug.WriteLine($"InspectorActivate: 开始更新邮件内容，InspectorId={inspectorId}, 类型: {mailItem.GetType().Name}")
             
             ' 检查控件句柄是否已创建，避免 BeginInvoke 异常
             If inspectorPane.IsHandleCreated Then
-                inspectorPane.BeginInvoke(Sub()
-                                             Try
-                                                 UpdateInspectorMailContent(mailItem, inspectorPane)
-                                             Catch ex As System.Exception
-                                                 Debug.WriteLine($"Inspector Activate 更新异常: {ex.Message}")
-                                             End Try
-                                         End Sub)
+                Try
+                    inspectorPane.BeginInvoke(Sub()
+                                                 Try
+                                                     UpdateInspectorMailContent(mailItem, inspectorPane)
+                                                 Catch updateEx As System.Exception
+                                                     Debug.WriteLine($"Inspector Activate 更新异常: {updateEx.Message}")
+                                                     ' 不显示错误弹窗，静默处理
+                                                 End Try
+                                             End Sub)
+                Catch invokeEx As System.Exception
+                    Debug.WriteLine($"InspectorActivate: BeginInvoke 异常 - {invokeEx.Message}")
+                    ' 如果 BeginInvoke 失败，直接调用
+                    Try
+                        UpdateInspectorMailContent(mailItem, inspectorPane)
+                    Catch directEx As System.Exception
+                        Debug.WriteLine($"InspectorActivate: 直接更新异常 - {directEx.Message}")
+                    End Try
+                End Try
             Else
                 ' 句柄未创建时，延迟到句柄创建后再执行
-                AddHandler inspectorPane.HandleCreated, Sub()
-                                                            Try
-                                                                UpdateInspectorMailContent(mailItem, inspectorPane)
-                                                            Catch ex As System.Exception
-                                                                Debug.WriteLine($"Inspector 延迟更新异常: {ex.Message}")
-                                                            End Try
-                                                        End Sub
+                Try
+                    AddHandler inspectorPane.HandleCreated, Sub(sender, e)
+                                                                Try
+                                                                    ' 移除事件处理程序避免重复
+                                                                    RemoveHandler inspectorPane.HandleCreated, Sub(s, evt) UpdateInspectorMailContent(mailItem, inspectorPane)
+                                                                    UpdateInspectorMailContent(mailItem, inspectorPane)
+                                                                Catch handleEx As System.Exception
+                                                                    Debug.WriteLine($"Inspector 延迟更新异常: {handleEx.Message}")
+                                                                End Try
+                                                            End Sub
+                Catch handlerEx As System.Exception
+                    Debug.WriteLine($"InspectorActivate: 添加 HandleCreated 事件处理程序异常 - {handlerEx.Message}")
+                End Try
             End If
         Catch ex As System.Runtime.InteropServices.COMException
-            ' COM异常静默处理，只记录调试信息
-            Debug.WriteLine($"InspectorActivate COM异常 (HRESULT: {ex.HResult:X8}): {ex.Message}")
-            If Not HasShownMailOpenError Then
-                 HasShownMailOpenError = True
-                 ' 第一次错误时可以选择显示提示
-                 ' MessageBox.Show("激活邮件窗口时遇到问题，后续类似错误将被静默处理。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            ' 记录详细的COM异常信息
+            If ErrorNotificationSettings.Instance.LogErrorsToDebug Then
+                Debug.WriteLine($"InspectorActivate COM异常 (HRESULT: {ex.HResult:X8}): {ex.Message}")
+                Debug.WriteLine($"StackTrace: {ex.StackTrace}")
             End If
+            
+            ' 静默处理COM错误，不显示弹窗
+            Debug.WriteLine("InspectorActivate: COM异常已静默处理")
         Catch ex As Exception
-            Debug.WriteLine($"InspectorActivate 异常: {ex.Message}")
-            If Not HasShownMailOpenError Then
-                 HasShownMailOpenError = True
-                 ' 第一次错误时显示提示，后续静默处理
-                 MessageBox.Show("激活邮件窗口时遇到问题，后续类似错误将被静默处理。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            ' 记录详细的异常信息
+            If ErrorNotificationSettings.Instance.LogErrorsToDebug Then
+                Debug.WriteLine($"InspectorActivate 异常: {ex.Message}")
+                Debug.WriteLine($"StackTrace: {ex.StackTrace}")
+            End If
+            
+            ' 静默处理所有异常，避免用户弹窗
+            Debug.WriteLine("InspectorActivate: 异常已静默处理")
+            ShowErrorWithConfig("激活邮件窗口时遇到问题", ex.Message)
+                End If
             End If
         End Try
     End Sub
+
+    ' 检查邮件对象是否完全加载
+    Private Function IsMailItemFullyLoaded(item As Object) As Boolean
+        Try
+            If item Is Nothing Then Return False
+            
+            ' 尝试安全访问基本属性来验证对象是否已完全加载
+            Dim testProperty As String = String.Empty
+            
+            If TypeOf item Is Outlook.MailItem Then
+                Dim mail As Outlook.MailItem = DirectCast(item, Outlook.MailItem)
+                testProperty = mail.EntryID
+            ElseIf TypeOf item Is Outlook.AppointmentItem Then
+                Dim appointment As Outlook.AppointmentItem = DirectCast(item, Outlook.AppointmentItem)
+                testProperty = appointment.EntryID
+            ElseIf TypeOf item Is Outlook.MeetingItem Then
+                Dim meeting As Outlook.MeetingItem = DirectCast(item, Outlook.MeetingItem)
+                testProperty = meeting.EntryID
+            ElseIf TypeOf item Is Outlook.TaskItem Then
+                Dim task As Outlook.TaskItem = DirectCast(item, Outlook.TaskItem)
+                testProperty = task.EntryID
+            ElseIf TypeOf item Is Outlook.ContactItem Then
+                Dim contact As Outlook.ContactItem = DirectCast(item, Outlook.ContactItem)
+                testProperty = contact.EntryID
+            Else
+                Return False
+            End If
+            
+            ' 如果成功获取EntryID且不为空，则认为对象已加载
+            Return Not String.IsNullOrEmpty(testProperty)
+        Catch ex As System.Runtime.InteropServices.COMException
+            ' COM异常通常表示对象尚未准备好
+            Debug.WriteLine($"邮件对象尚未完全加载: {ex.Message}")
+            Return False
+        Catch ex As System.Exception
+            ' 其他异常也视为未加载
+            Debug.WriteLine($"检查邮件对象状态时出错: {ex.Message}")
+            Return False
+        End Try
+    End Function
+
+    ' 增强的邮件对象就绪检查，检查更多关键属性
+    Private Function IsMailItemReady(item As Object) As Boolean
+        If item Is Nothing Then Return False
+        
+        Try
+            If TypeOf item Is Outlook.MailItem Then
+                Dim mail As Outlook.MailItem = DirectCast(item, Outlook.MailItem)
+                ' 检查关键属性是否可访问
+                Dim subject As String = mail.Subject
+                Dim entryId As String = mail.EntryID
+                Dim conversationId As String = mail.ConversationID
+                Return Not String.IsNullOrEmpty(entryId)
+            ElseIf TypeOf item Is Outlook.AppointmentItem Then
+                Dim appt As Outlook.AppointmentItem = DirectCast(item, Outlook.AppointmentItem)
+                Dim subject As String = appt.Subject
+                Dim entryId As String = appt.EntryID
+                Return Not String.IsNullOrEmpty(entryId)
+            ElseIf TypeOf item Is Outlook.MeetingItem Then
+                Dim meeting As Outlook.MeetingItem = DirectCast(item, Outlook.MeetingItem)
+                Dim subject As String = meeting.Subject
+                Dim entryId As String = meeting.EntryID
+                Return Not String.IsNullOrEmpty(entryId)
+            ElseIf TypeOf item Is Outlook.TaskItem Then
+                Dim task As Outlook.TaskItem = DirectCast(item, Outlook.TaskItem)
+                Dim subject As String = task.Subject
+                Dim entryId As String = task.EntryID
+                Return Not String.IsNullOrEmpty(entryId)
+            ElseIf TypeOf item Is Outlook.ContactItem Then
+                Dim contact As Outlook.ContactItem = DirectCast(item, Outlook.ContactItem)
+                Dim subject As String = contact.FullName
+                Dim entryId As String = contact.EntryID
+                Return Not String.IsNullOrEmpty(entryId)
+            End If
+            
+            Return True ' 其他类型默认认为已就绪
+        Catch ex As System.Runtime.InteropServices.COMException
+            Debug.WriteLine($"IsMailItemReady COM异常: {ex.Message}")
+            Return False
+        Catch ex As System.Exception
+            Debug.WriteLine($"IsMailItemReady 异常: {ex.Message}")
+            Return False
+        End Try
+    End Function
 
     ' Update mail content in Inspector window
     Private Sub UpdateInspectorMailContent(item As Object, inspectorPane As MailThreadPane)
@@ -807,65 +1062,90 @@ Public Class ThisAddIn
             ' 抑制期间跳过更新，避免联系人信息列表构造时刷新
             If inspectorPane Is Nothing OrElse inspectorPane.IsWebViewUpdateSuppressed Then Return
 
+            ' 检查邮件对象是否已完全加载
+            If Not IsMailItemFullyLoaded(item) Then
+                Debug.WriteLine($"UpdateInspectorMailContent: 邮件对象尚未完全加载，类型: {If(item IsNot Nothing, item.GetType().Name, "Nothing")}")
+                Return
+            End If
+
             Dim mailEntryID As String = String.Empty
             Dim conversationID As String = String.Empty
+            Dim itemType As String = "Unknown"
 
-            ' 仅读取 EntryID，避免在事件回调后立即访问其他属性
-            If TypeOf item Is Outlook.MailItem Then
-                Dim mail As Outlook.MailItem = DirectCast(item, Outlook.MailItem)
-                mailEntryID = mail.EntryID
-            ElseIf TypeOf item Is Outlook.AppointmentItem Then
-                Dim appointment As Outlook.AppointmentItem = DirectCast(item, Outlook.AppointmentItem)
-                mailEntryID = appointment.EntryID
-            ElseIf TypeOf item Is Outlook.MeetingItem Then
-                Dim meeting As Outlook.MeetingItem = DirectCast(item, Outlook.MeetingItem)
-                mailEntryID = meeting.EntryID
-            ElseIf TypeOf item Is Outlook.TaskItem Then
-                Dim task As Outlook.TaskItem = DirectCast(item, Outlook.TaskItem)
-                mailEntryID = task.EntryID
-            ElseIf TypeOf item Is Outlook.ContactItem Then
-                Dim contact As Outlook.ContactItem = DirectCast(item, Outlook.ContactItem)
-                mailEntryID = contact.EntryID
+            ' 安全地读取 EntryID 和 ConversationID，添加多重保护
+            Try
+                If TypeOf item Is Outlook.MailItem Then
+                    Dim mail As Outlook.MailItem = DirectCast(item, Outlook.MailItem)
+                    mailEntryID = If(mail.EntryID, String.Empty)
+                    conversationID = If(mail.ConversationID, String.Empty)
+                    itemType = "MailItem"
+                ElseIf TypeOf item Is Outlook.AppointmentItem Then
+                    Dim appointment As Outlook.AppointmentItem = DirectCast(item, Outlook.AppointmentItem)
+                    mailEntryID = If(appointment.EntryID, String.Empty)
+                    conversationID = If(appointment.ConversationID, String.Empty)
+                    itemType = "AppointmentItem"
+                ElseIf TypeOf item Is Outlook.MeetingItem Then
+                    Dim meeting As Outlook.MeetingItem = DirectCast(item, Outlook.MeetingItem)
+                    mailEntryID = If(meeting.EntryID, String.Empty)
+                    conversationID = If(meeting.ConversationID, String.Empty)
+                    itemType = "MeetingItem"
+                ElseIf TypeOf item Is Outlook.TaskItem Then
+                    Dim task As Outlook.TaskItem = DirectCast(item, Outlook.TaskItem)
+                    mailEntryID = If(task.EntryID, String.Empty)
+                    itemType = "TaskItem"
+                ElseIf TypeOf item Is Outlook.ContactItem Then
+                    Dim contact As Outlook.ContactItem = DirectCast(item, Outlook.ContactItem)
+                    mailEntryID = If(contact.EntryID, String.Empty)
+                    itemType = "ContactItem"
+                Else
+                    Debug.WriteLine($"UpdateInspectorMailContent: 不支持的邮件类型 {item.GetType().Name}")
+                    Return
+                End If
+            Catch accessEx As System.UnauthorizedAccessException
+                Debug.WriteLine($"UpdateInspectorMailContent: 访问权限异常 - {accessEx.Message}")
+                Return
+            Catch ex As System.Exception
+                Debug.WriteLine($"UpdateInspectorMailContent: 读取邮件属性时异常 - {ex.Message}")
+                Return
+            End Try
+
+            ' 验证必要的ID不为空
+            If String.IsNullOrEmpty(mailEntryID) Then
+                Debug.WriteLine($"UpdateInspectorMailContent: 无法获取有效的邮件EntryID，类型: {itemType}")
+                Return
             End If
+
+            Debug.WriteLine($"UpdateInspectorMailContent: 开始更新，类型: {itemType}, EntryID: {If(mailEntryID.Length > 10, mailEntryID.Substring(0, 10) & "...", mailEntryID)}")
 
             ' Update mail list
-            If Not String.IsNullOrEmpty(mailEntryID) Then
+            Try
                 inspectorPane.UpdateMailList(conversationID, mailEntryID)
-            End If
+                Debug.WriteLine($"UpdateInspectorMailContent: 更新完成")
+            Catch updateEx As System.Exception
+                Debug.WriteLine($"UpdateInspectorMailContent: 更新邮件列表失败 - {updateEx.Message}")
+                ' 不抛出异常，避免弹窗
+            End Try
+
         Catch ex As System.Runtime.InteropServices.COMException
-            ' 记录调试信息
-            If ErrorSettings.LogErrorsToDebug Then
-                Debug.WriteLine($"UpdateInspectorMailContent COM异常 (HRESULT: {ex.HResult:X8}): {ex.Message}")
+            ' 记录详细的COM异常信息
+            If ErrorNotificationSettings.Instance.LogErrorsToDebug Then
+                Debug.WriteLine($"UpdateInspectorMailContent COM异常 (HRESULT: {ex.HResult:X8}, Type: {ex.GetType().Name}): {ex.Message}")
+                Debug.WriteLine($"StackTrace: {ex.StackTrace}")
             End If
             
-            ' 根据配置决定是否显示COM错误
-            If ErrorSettings.ShowErrorDialogs AndAlso ErrorSettings.ShowCOMErrorDialogs Then
-                If ErrorSettings.ShowOnlyFirstError Then
-                    If Not HasShownMailOpenError Then
-                        HasShownMailOpenError = True
-                        MessageBox.Show("邮件加载时遇到COM问题，后续类似错误将被静默处理。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
-                    End If
-                Else
-                    MessageBox.Show($"邮件加载时遇到COM问题：{ex.Message}", "COM错误", MessageBoxButtons.OK, MessageBoxIcon.Warning)
-                End If
+            ' 根据配置决定是否显示COM错误（使用统一的错误处理策略）
+            If ErrorNotificationSettings.Instance.ShowCOMErrorDialogs Then
+                ShowErrorWithConfig("邮件加载时遇到COM问题", ex.Message)
             End If
         Catch ex As Exception
             ' 记录调试信息
-            If ErrorSettings.LogErrorsToDebug Then
+            If ErrorNotificationSettings.Instance.LogErrorsToDebug Then
                 Debug.WriteLine($"UpdateInspectorMailContent 异常: {ex.Message}")
             End If
             
             ' 根据配置决定是否显示错误
-            If ErrorSettings.ShowErrorDialogs Then
-                If ErrorSettings.ShowOnlyFirstError Then
-                    If Not HasShownMailOpenError Then
-                        HasShownMailOpenError = True
-                        MessageBox.Show("邮件加载时遇到问题，后续类似错误将被静默处理。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
-                    End If
-                Else
-                    MessageBox.Show($"邮件加载时遇到问题：{ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Warning)
-                End If
-            End If
+            ' 使用统一的错误处理策略
+            ShowErrorWithConfig("邮件加载时遇到问题", ex.Message)
         End Try
     End Sub
 
@@ -957,7 +1237,9 @@ Public Class ThisAddIn
                 ApplyThemeToControls()
             End If
 
-            Debug.WriteLine($"当前Outlook主题: {currentTheme}")
+            ' 更新全局主题时间戳，避免在邮件内容加载时重复刷新主题
+            MailThreadPane.globalThemeLastUpdate = DateTime.Now
+            Debug.WriteLine($"当前Outlook主题: {currentTheme}, 全局主题更新时间: {MailThreadPane.globalThemeLastUpdate}")
         Catch ex As Exception
             Debug.WriteLine($"获取Outlook主题时出错: {ex.Message}")
         End Try
@@ -972,9 +1254,21 @@ Public Class ThisAddIn
 
     ' System theme change event handler
     Private Sub SystemEvents_UserPreferenceChanged(sender As Object, e As UserPreferenceChangedEventArgs)
-        If e.Category = UserPreferenceCategory.Color Then
-            GetCurrentOutlookTheme()
-        End If
+        Try
+            ' 只处理颜色相关的系统偏好变化，避免影响其他系统设置
+            If e.Category = UserPreferenceCategory.Color Then
+                ' 使用异步调用避免阻塞系统事件处理
+                System.Threading.Tasks.Task.Run(Sub()
+                    Try
+                        GetCurrentOutlookTheme()
+                    Catch ex As Exception
+                        Debug.WriteLine($"异步主题更新时出错: {ex.Message}")
+                    End Try
+                End Sub)
+            End If
+        Catch ex As Exception
+            Debug.WriteLine($"SystemEvents_UserPreferenceChanged处理时出错: {ex.Message}")
+        End Try
     End Sub
 
     ' Apply theme to controls
@@ -1166,9 +1460,25 @@ Public Class ThisAddIn
     Private Sub ThisAddIn_Startup() Handles Me.Startup
         ' 初始化Application对象已在Designer中完成
 
+        ' 强制关闭所有错误对话框显示，确保静默运行
+        ErrorNotificationSettings.Instance.ShowErrorDialogs = False
+        ErrorNotificationSettings.Instance.ShowCOMErrorDialogs = False
+        ErrorNotificationSettings.Instance.ShowOnlyFirstError = True
+        ErrorNotificationSettings.Instance.LogErrorsToDebug = True
+        ErrorNotificationSettings.Instance.SaveSettings()
+
+        ' 重置所有错误显示标志，确保启动时不会重复显示错误
+        hasShownInspectorCOMError = False
+        hasShownInspectorError = False
+        HasShownMailOpenError = False
+
         ' 注册全局异常处理，避免未处理异常弹窗，并记录日志
         AddHandler AppDomain.CurrentDomain.UnhandledException, AddressOf GlobalUnhandledExceptionHandler
         AddHandler System.Windows.Forms.Application.ThreadException, AddressOf GlobalThreadExceptionHandler
+        
+        ' 注册应用程序域卸载事件，确保在任何情况下都能恢复鼠标光标
+        AddHandler AppDomain.CurrentDomain.DomainUnload, AddressOf AppDomain_DomainUnload
+        AddHandler AppDomain.CurrentDomain.ProcessExit, AddressOf AppDomain_ProcessExit
 
         ' 从注册表加载缓存开关
         LoadCacheEnabledFromRegistry()
@@ -1205,6 +1515,11 @@ Public Class ThisAddIn
     Private Sub GlobalUnhandledExceptionHandler(sender As Object, e As UnhandledExceptionEventArgs)
         Try
             Dim ex = TryCast(e.ExceptionObject, Exception)
+            ' 静默处理Office Ribbon加载错误
+            If IsOfficeRibbonLoadError(ex) Then
+                Debug.WriteLine($"[RibbonLoadError] {ex?.Message}")
+                Return
+            End If
             LogException(ex, "Unhandled")
         Catch
         End Try
@@ -1212,30 +1527,55 @@ Public Class ThisAddIn
 
     Private Sub GlobalThreadExceptionHandler(sender As Object, e As Threading.ThreadExceptionEventArgs)
         Try
+            ' 静默处理Office Ribbon加载错误
+            If IsOfficeRibbonLoadError(e.Exception) Then
+                Debug.WriteLine($"[RibbonLoadError] {e.Exception?.Message}")
+                Return
+            End If
             LogException(e.Exception, "Thread")
         Catch
         End Try
     End Sub
 
-    Public Sub LogException(ex As Exception, prefix As String)
+    Public Async Sub LogException(ex As Exception, prefix As String)
         Try
-            Dim dir As String = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OutlookMyList")
-            System.IO.Directory.CreateDirectory(dir)
-            Dim logPath As String = System.IO.Path.Combine(dir, "error.log")
-            System.IO.File.AppendAllText(logPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} [{prefix}] {ex?.ToString()}{Environment.NewLine}")
+            ' 立即输出调试信息，不等待文件操作
             Debug.WriteLine($"[{prefix}] {ex?.Message}")
+            
+            ' 异步执行文件操作，避免阻塞UI线程
+            Await Task.Run(Sub()
+                Try
+                    Dim dir As String = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OutlookMyList")
+                    System.IO.Directory.CreateDirectory(dir)
+                    Dim logPath As String = System.IO.Path.Combine(dir, "error.log")
+                    System.IO.File.AppendAllText(logPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} [{prefix}] {ex?.ToString()}{Environment.NewLine}")
+                Catch
+                    ' 静默处理文件操作异常，避免递归日志记录
+                End Try
+            End Sub)
         Catch
+            ' 静默处理异常，避免递归日志记录
         End Try
     End Sub
 
-    Public Sub LogInfo(message As String)
+    Public Async Sub LogInfo(message As String)
         Try
-            Dim dir As String = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OutlookMyList")
-            System.IO.Directory.CreateDirectory(dir)
-            Dim logPath As String = System.IO.Path.Combine(dir, "error.log")
-            System.IO.File.AppendAllText(logPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} [Info] {message}{Environment.NewLine}")
+            ' 立即输出调试信息，不等待文件操作
             Debug.WriteLine(message)
+            
+            ' 异步执行文件操作，避免阻塞UI线程
+            Await Task.Run(Sub()
+                Try
+                    Dim dir As String = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OutlookMyList")
+                    System.IO.Directory.CreateDirectory(dir)
+                    Dim logPath As String = System.IO.Path.Combine(dir, "error.log")
+                    System.IO.File.AppendAllText(logPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} [Info] {message}{Environment.NewLine}")
+                Catch
+                    ' 静默处理文件操作异常，避免递归日志记录
+                End Try
+            End Sub)
         Catch
+            ' 静默处理异常，避免递归日志记录
         End Try
     End Sub
 
@@ -1362,4 +1702,39 @@ Public Class ThisAddIn
          End Try
     End Sub
 
+    ' 应用程序域卸载事件处理 - 确保恢复鼠标光标
+    Private Sub AppDomain_DomainUnload(sender As Object, e As EventArgs)
+        Try
+            Debug.WriteLine("应用程序域卸载，恢复鼠标光标...")
+            Win32Helper.RestoreSystemCursors()
+        Catch ex As Exception
+            ' 在域卸载时不记录异常，避免可能的问题
+        End Try
+    End Sub
+
+    ' 进程退出事件处理 - 确保恢复鼠标光标
+    Private Sub AppDomain_ProcessExit(sender As Object, e As EventArgs)
+        Try
+            Debug.WriteLine("进程退出，恢复鼠标光标...")
+            Win32Helper.RestoreSystemCursors()
+        Catch ex As Exception
+            ' 在进程退出时不记录异常
+        End Try
+    End Sub
+
+    ' 检查是否为Office Ribbon加载错误
+    Private Function IsOfficeRibbonLoadError(ex As Exception) As Boolean
+        If ex Is Nothing Then Return False
+        
+        Dim message As String = ex.Message
+        If String.IsNullOrEmpty(message) Then Return False
+        
+        ' 检查是否包含Office Ribbon加载相关的错误信息
+        Dim lowerMessage As String = message.ToLowerInvariant()
+        
+        Return (lowerMessage.Contains("tabmail") AndAlso lowerMessage.Contains("failed to find office control")) OrElse
+               (lowerMessage.Contains("tabsetrecurringappointment") AndAlso lowerMessage.Contains("failed to find office control")) OrElse
+               (lowerMessage.Contains("0x80004005") AndAlso lowerMessage.Contains("failed to find office control")) OrElse
+               (lowerMessage.Contains("custom ui xml") AndAlso lowerMessage.Contains("error"))
+    End Function
 End Class

@@ -86,7 +86,9 @@ Public Class EmbeddedBottomPane
 
     Private Sub TestButton_Click(sender As Object, e As EventArgs)
         statusLabel.Text = "状态：按钮已点击 - " & DateTime.Now.ToString("HH:mm:ss")
-        MessageBox.Show("嵌入式底部面板功能测试成功！", "测试", MessageBoxButtons.OK, MessageBoxIcon.Information)
+        If ErrorNotificationSettings.Instance.ShowErrorDialogs Then
+            MessageBox.Show("嵌入式底部面板功能测试成功！", "测试", MessageBoxButtons.OK, MessageBoxIcon.Information)
+        End If
     End Sub
 
     ' 尝试嵌入到Outlook窗口

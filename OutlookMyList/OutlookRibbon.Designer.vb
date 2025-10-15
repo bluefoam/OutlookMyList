@@ -44,11 +44,10 @@ Partial Class OutlookRibbon
         '
         'Tab1
         '
-        Me.Tab1.ControlId.ControlIdType = Microsoft.Office.Tools.Ribbon.RibbonControlIdType.Office
-        Me.Tab1.ControlId.OfficeId = "TabMail"
+        Me.Tab1.ControlId.ControlIdType = Microsoft.Office.Tools.Ribbon.RibbonControlIdType.Custom
         Me.Tab1.Groups.Add(Me.Group1)
         Me.Tab1.Label = "MyList"
-        Me.Tab1.Name = "Tab1"
+        Me.Tab1.Name = "TabMyList"
         '
         'Group1
         '

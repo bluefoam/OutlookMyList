@@ -878,7 +878,9 @@ Public Class MailThreadPane
             })
         Catch ex As System.Exception
             Debug.WriteLine($"打开链接出错: {ex.Message}")
-            MessageBox.Show("无法打开链接，请手动复制链接地址到浏览器中打开。")
+            If ErrorNotificationSettings.Instance.ShowErrorDialogs Then
+                MessageBox.Show("无法打开链接，请手动复制链接地址到浏览器中打开。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            End If
         End Try
     End Sub
 
@@ -2305,33 +2307,18 @@ Public Class MailThreadPane
                 Debug.WriteLine($"OpenOutlookMail COM异常 (HRESULT: {ex.HResult:X8}): {ex.Message}")
             End If
             
-            ' 根据配置决定是否显示COM错误
-            If ThisAddIn.ErrorSettings.ShowErrorDialogs AndAlso ThisAddIn.ErrorSettings.ShowCOMErrorDialogs Then
-                If ThisAddIn.ErrorSettings.ShowOnlyFirstError Then
-                    If Not ThisAddIn.HasShownMailOpenError Then
-                        ThisAddIn.HasShownMailOpenError = True
-                        MessageBox.Show("无法打开邮件，可能已被删除或移动。后续类似错误将被静默处理。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
-                    End If
-                Else
-                    MessageBox.Show($"无法打开邮件：{ex.Message}", "COM错误", MessageBoxButtons.OK, MessageBoxIcon.Warning)
-                End If
-            End If
+            ' 统一COM错误处理
+            Globals.ThisAddIn.ShowErrorWithConfig("无法打开邮件，可能已被删除或移动", ex.Message)
         Catch ex As System.Exception
             ' 记录调试信息
-            If ThisAddIn.ErrorSettings.LogErrorsToDebug Then
+            If ErrorNotificationSettings.Instance.LogErrorsToDebug Then
                 Debug.WriteLine($"OpenOutlookMail 异常: {ex.Message}")
             End If
             
             ' 根据配置决定是否显示错误
-            If ThisAddIn.ErrorSettings.ShowErrorDialogs Then
-                If ThisAddIn.ErrorSettings.ShowOnlyFirstError Then
-                    If Not ThisAddIn.HasShownMailOpenError Then
-                        ThisAddIn.HasShownMailOpenError = True
-                        MessageBox.Show("无法打开邮件，可能已被删除或移动。后续类似错误将被静默处理。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
-                    End If
-                Else
-                    MessageBox.Show($"无法打开邮件：{ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Warning)
-                End If
+            If ErrorNotificationSettings.Instance.ShowErrorDialogs Then
+                ' 统一错误处理
+                Globals.ThisAddIn.ShowErrorWithConfig("无法打开邮件，可能已被删除或移动", ex.Message)
             End If
         End Try
     End Sub
@@ -2802,7 +2789,7 @@ Public Class MailThreadPane
             Dim loading As New TreeNode("正在收集联系人来往邮件信息...")
             contactInfoTree.Nodes.Add(loading)
 
-            Dim result = Await Task.Run(Function() GetContactInfoData(CancellationToken))
+            Dim result = Await GetContactInfoData(CancellationToken)
 
             ' 检查是否被取消
             If CancellationToken.IsCancellationRequested Then
@@ -2884,7 +2871,7 @@ Public Class MailThreadPane
     End Sub
 
     ' 生成联系人信息的结构化数据
-    Private Function GetContactInfoData(Optional cancellationToken As Threading.CancellationToken = Nothing) As (SenderName As String, SenderEmail As String, MeetingStats As Dictionary(Of String, Integer), Upcoming As List(Of (MeetingDate As DateTime, Title As String, EntryID As String)), MailCount As Integer, RecentMailIds As List(Of (EntryID As String, Subject As String, Received As DateTime)), ConversationGroups As Dictionary(Of String, List(Of (EntryID As String, Subject As String, Received As DateTime))))
+    Private Async Function GetContactInfoData(Optional cancellationToken As Threading.CancellationToken = Nothing) As Task(Of (SenderName As String, SenderEmail As String, MeetingStats As Dictionary(Of String, Integer), Upcoming As List(Of (MeetingDate As DateTime, Title As String, EntryID As String)), MailCount As Integer, RecentMailIds As List(Of (EntryID As String, Subject As String, Received As DateTime)), ConversationGroups As Dictionary(Of String, List(Of (EntryID As String, Subject As String, Received As DateTime)))))
         Dim senderName As String = ""
         Dim senderEmail As String = ""
         Dim meetingStats As New Dictionary(Of String, Integer)
@@ -3050,7 +3037,7 @@ Public Class MailThreadPane
                                        End Try
                                    End Function))
             Next
-            Dim searchResults = Task.WhenAll(tasks).Result
+            Dim searchResults = Await Task.WhenAll(tasks)
             For Each r In searchResults
                 mailCount += r.Count
                 For Each mail In r.Mails
@@ -3526,7 +3513,7 @@ Public Class MailThreadPane
                         Runtime.InteropServices.Marshal.ReleaseComObject(mailItem)
                     End If
                 Catch ex As System.Exception
-                    MessageBox.Show($"获取会话ID失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                    Globals.ThisAddIn.ShowErrorWithConfig("获取会话ID失败", ex.Message)
                 End Try
             Else
                 MessageBox.Show("所选节点不是邮件节点", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning)
@@ -3555,7 +3542,7 @@ Public Class MailThreadPane
             End If
         Catch ex As System.Exception
             Debug.WriteLine($"ShowTreeTaskStatus_Click error: {ex.Message}")
-            MessageBox.Show($"获取任务关联状态失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            Globals.ThisAddIn.ShowErrorWithConfig("获取任务关联状态失败", ex.Message)
         End Try
     End Sub
 
@@ -3585,10 +3572,21 @@ Public Class MailThreadPane
             If Not String.IsNullOrEmpty(entryId) AndAlso Not entryId.StartsWith("CONVERSATION:") Then
                 SafeOpenOutlookMail(entryId)
             Else
-                MessageBox.Show("所选节点不是邮件节点", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                ' 记录调试信息
+                If ThisAddIn.ErrorSettings.LogErrorsToDebug Then
+                    Debug.WriteLine("OpenInOutlook_Click: 所选节点不是邮件节点")
+                End If
+                
+                ' 根据配置决定是否显示错误提示
+                If ThisAddIn.ErrorSettings.ShowErrorDialogs Then
+                    MessageBox.Show("所选节点不是邮件节点", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                End If
             End If
         Catch ex As System.Exception
-            Debug.WriteLine($"OpenInOutlook_Click error: {ex.Message}")
+            ' 记录调试信息
+            If ThisAddIn.ErrorSettings.LogErrorsToDebug Then
+                Debug.WriteLine($"OpenInOutlook_Click error: {ex.Message}")
+            End If
         End Try
     End Sub
 
@@ -3614,7 +3612,7 @@ Public Class MailThreadPane
                         Runtime.InteropServices.Marshal.ReleaseComObject(mailItem)
                     End If
                 Catch ex As System.Exception
-                    MessageBox.Show($"获取智能会话ID失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                    Globals.ThisAddIn.ShowErrorWithConfig("获取智能会话ID失败", ex.Message)
                 End Try
             Else
                 MessageBox.Show("所选节点不是邮件节点", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning)
@@ -3672,7 +3670,7 @@ Public Class MailThreadPane
                         Runtime.InteropServices.Marshal.ReleaseComObject(mailItem)
                     End If
                 Catch ex As System.Exception
-                    MessageBox.Show($"查找相关会话失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                    Globals.ThisAddIn.ShowErrorWithConfig("查找相关会话失败", ex.Message)
                 End Try
             Else
                 MessageBox.Show("所选节点不是邮件节点", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning)
@@ -4750,7 +4748,7 @@ Public Class MailThreadPane
         Catch ex As System.Exception
             Debug.WriteLine($"lvMails_DragDrop error: {ex.Message}")
             HideProgress()
-            MessageBox.Show($"拖拽处理时出错: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            Globals.ThisAddIn.ShowErrorWithConfig("拖拽处理时出错", ex.Message)
         End Try
     End Sub
 
@@ -5272,7 +5270,9 @@ Public Class MailThreadPane
             })
         Catch ex As System.Exception
             Debug.WriteLine($"打开链接出错: {ex.Message}")
-            MessageBox.Show("无法打开链接，请手动复制链接地址到浏览器中打开。")
+            If ErrorNotificationSettings.Instance.ShowErrorDialogs Then
+                MessageBox.Show("无法打开链接，请手动复制链接地址到浏览器中打开。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            End If
         End Try
     End Sub
 
@@ -6058,6 +6058,42 @@ Public Class MailThreadPane
                 Return
             End If
 
+            ' 检查当前邮件是否已完全加载，如果未加载则延迟重试
+            Dim currentItem = OutlookMyList.Utils.OutlookUtils.SafeGetItemFromID(currentMailEntryID)
+            If currentItem IsNot Nothing AndAlso Not OutlookUtils.IsMailItemReady(currentItem) Then
+                Debug.WriteLine("邮件未完全加载，延迟800ms后重试...")
+                Await Task.Delay(800)
+                
+                ' 重试检查
+                currentItem = OutlookMyList.Utils.OutlookUtils.SafeGetItemFromID(currentMailEntryID)
+                If currentItem IsNot Nothing AndAlso Not OutlookUtils.IsMailItemReady(currentItem) Then
+                    Debug.WriteLine("邮件仍然未完全加载，尝试重试机制")
+                    
+                    ' 尝试等待邮件加载完成
+                    Dim isReady As Boolean = Await OutlookUtils.WaitForMailItemReady(currentItem, 1000, 200)
+                    
+                    If Not isReady Then
+                        Debug.WriteLine("邮件加载超时，显示加载中提示")
+                        HideProgress()
+                        
+                        ' 清空并显示友好的加载提示
+                        lvMails.BeginUpdate()
+                        lvMails.Items.Clear()
+                        
+                        Dim loadingItem As New ListViewItem("邮件内容正在加载中，请稍候...")
+                        loadingItem.Tag = "LOADING_PLACEHOLDER"
+                        loadingItem.ForeColor = SystemColors.GrayText
+                        
+                        lvMails.Items.Add(loadingItem)
+                        lvMails.EndUpdate()
+                        
+                        Return
+                    Else
+                        Debug.WriteLine("邮件加载完成，继续处理")
+                    End If
+                End If
+            End If
+
             ' 显示进度指示器
             ShowProgress("正在加载会话邮件...")
 
@@ -6104,6 +6140,26 @@ Public Class MailThreadPane
         Try
             currentItem = OutlookMyList.Utils.OutlookUtils.SafeGetItemFromID(currentMailEntryID)
             If currentItem IsNot Nothing Then
+                ' 检查邮件是否已完全加载，带重试机制
+                Dim maxRetries As Integer = 3
+                Dim retryCount As Integer = 0
+                Dim isReady As Boolean = False
+                
+                While retryCount < maxRetries AndAlso Not isReady
+                    If OutlookUtils.IsMailItemReady(currentItem) Then
+                        isReady = True
+                        Exit While
+                    End If
+                    
+                    retryCount += 1
+                    System.Threading.Thread.Sleep(100) ' 后台线程使用同步等待
+                End While
+                
+                If Not isReady Then
+                    Debug.WriteLine($"当前邮件未完全加载，重试{maxRetries}次后跳过: {currentMailEntryID}")
+                    Return
+                End If
+                
                 ' 统一使用智能会话键（优先自定义ID）
                 smartId = GetSmartConversationKey(currentItem)
             End If
@@ -6166,6 +6222,13 @@ Public Class MailThreadPane
                 currentItem = OutlookMyList.Utils.OutlookUtils.SafeGetItemFromID(currentMailEntryID)
                 If currentItem Is Nothing Then
                     Throw New System.Exception("无法获取邮件项")
+                End If
+
+                ' 检查当前邮件项是否已完全加载
+                If Not OutlookUtils.IsMailItemReady(currentItem) Then
+                    Debug.WriteLine("当前邮件项未完全加载，等待重试...")
+                    ' 如果当前邮件未完全加载，跳过此次更新
+                    Return
                 End If
 
                 ' 获取 conversation 对象前先检查类型
@@ -6256,6 +6319,12 @@ Public Class MailThreadPane
                                 For Each it As Object In items
                                     Try
                                         
+                                        ' 检查邮件项是否已完全加载
+                                        If Not OutlookUtils.IsMailItemReady(it) Then
+                                            Debug.WriteLine("邮件项未完全加载，跳过处理")
+                                            Continue For
+                                        End If
+
                                         Dim entryId As String = GetPermanentEntryID(it)
                                         Dim subject As String = "无主题"
                                         Dim senderName As String = "未知发件人"
@@ -6653,17 +6722,33 @@ Public Class MailThreadPane
                 End If
             Catch ex As System.Exception
                 Debug.WriteLine($"处理邮件时出错: {ex.Message}")
-                ' 在UI线程中显示错误信息（使用BeginInvoke避免阻塞）
-                Me.BeginInvoke(Sub()
-                                   lvMails.BeginUpdate()
-                                   lvMails.Items.Clear()
-                                   Dim errorItem As New ListViewItem($"加载失败: {ex.Message}")
-                                   errorItem.SubItems.Add("")
-                                   errorItem.SubItems.Add("")
-                                   errorItem.SubItems.Add("")
-                                   lvMails.Items.Add(errorItem)
-                                   lvMails.EndUpdate()
-                               End Sub)
+                ' 根据错误设置决定是否显示错误弹窗
+                If ErrorNotificationSettings.Instance.ShowErrorDialogs Then
+                    ' 在UI线程中显示错误信息（使用BeginInvoke避免阻塞）
+                    Me.BeginInvoke(Sub()
+                                       lvMails.BeginUpdate()
+                                       lvMails.Items.Clear()
+                                       Dim errorItem As New ListViewItem($"加载失败: {ex.Message}")
+                                       errorItem.SubItems.Add("")
+                                       errorItem.SubItems.Add("")
+                                       errorItem.SubItems.Add("")
+                                       lvMails.Items.Add(errorItem)
+                                       lvMails.EndUpdate()
+                                   End Sub)
+                Else
+                    ' 静默失败，只在列表中显示友好的错误提示
+                    Me.BeginInvoke(Sub()
+                                       lvMails.BeginUpdate()
+                                       lvMails.Items.Clear()
+                                       Dim errorItem As New ListViewItem("邮件加载遇到问题，请稍后重试")
+                                       errorItem.SubItems.Add("")
+                                       errorItem.SubItems.Add("")
+                                       errorItem.SubItems.Add("")
+                                       errorItem.ForeColor = System.Drawing.Color.Gray
+                                       lvMails.Items.Add(errorItem)
+                                       lvMails.EndUpdate()
+                                   End Sub)
+                End If
             End Try
         Finally
             ' 释放 COM 对象
@@ -7216,13 +7301,27 @@ UpdateUI:
                     End Try
                 End If
             Catch ex As System.Exception
-                Debug.WriteLine($"Failed to process mail item: {ex.Message}")
-                MessageBox.Show($"处理邮件时出错: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                ' 记录调试信息
+                If ThisAddIn.ErrorSettings.LogErrorsToDebug Then
+                    Debug.WriteLine($"Failed to process mail item: {ex.Message}")
+                End If
+                
+                ' 根据配置决定是否显示错误（使用统一的错误处理策略）
+                If ThisAddIn.ErrorSettings.ShowErrorDialogs Then
+                    ThisAddIn.ShowErrorWithConfig("处理邮件时出错", ex.Message)
+                End If
             End Try
 
         Catch ex As System.Exception
-            Debug.WriteLine($"LoadConversationMails error: {ex.Message}")
-            MessageBox.Show("加载邮件时出错，请尝试重启 Outlook。", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            ' 记录调试信息
+            If ThisAddIn.ErrorSettings.LogErrorsToDebug Then
+                Debug.WriteLine($"LoadConversationMails error: {ex.Message}")
+            End If
+            
+            ' 根据配置决定是否显示错误（使用统一的错误处理策略）
+            If ThisAddIn.ErrorSettings.ShowErrorDialogs Then
+                ThisAddIn.ShowErrorWithConfig("加载邮件时出错", ex.Message)
+            End If
         Finally
             lvMails.EndUpdate()
 
@@ -8036,7 +8135,7 @@ UpdateUI:
             Dim entryId As String = selectedItem.Tag?.ToString()
 
             If String.IsNullOrEmpty(entryId) Then
-                MessageBox.Show("无法获取邮件EntryID", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                Globals.ThisAddIn.ShowErrorWithConfig("无法获取邮件EntryID", "操作失败")
                 Return
             End If
 
@@ -8062,11 +8161,11 @@ UpdateUI:
                     OutlookMyList.Utils.OutlookUtils.SafeReleaseComObject(mailItem)
                 End Try
             Else
-                MessageBox.Show("无法获取邮件项", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                Globals.ThisAddIn.ShowErrorWithConfig("无法获取邮件项", "操作失败")
             End If
         Catch ex As System.Exception
             Debug.WriteLine($"ShowConversationId_Click error: {ex.Message}")
-            MessageBox.Show($"获取会话ID时出错: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            Globals.ThisAddIn.ShowErrorWithConfig("获取会话ID时出错", ex.Message)
         End Try
     End Sub
 
@@ -8081,7 +8180,7 @@ UpdateUI:
             Dim entryId As String = selectedItem.Tag?.ToString()
 
             If String.IsNullOrEmpty(entryId) Then
-                MessageBox.Show("无法获取邮件EntryID", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                Globals.ThisAddIn.ShowErrorWithConfig("无法获取邮件EntryID", "操作失败")
                 Return
             End If
 
@@ -8100,11 +8199,11 @@ UpdateUI:
                     OutlookMyList.Utils.OutlookUtils.SafeReleaseComObject(mailItem)
                 End Try
             Else
-                MessageBox.Show("无法获取邮件项", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                Globals.ThisAddIn.ShowErrorWithConfig("无法获取邮件项", "操作失败")
             End If
         Catch ex As System.Exception
             Debug.WriteLine($"CopyConversationId_Click error: {ex.Message}")
-            MessageBox.Show($"复制会话ID时出错: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            Globals.ThisAddIn.ShowErrorWithConfig("复制会话ID时出错", ex.Message)
         End Try
     End Sub
 
@@ -8119,7 +8218,7 @@ UpdateUI:
             Dim entryId As String = selectedItem.Tag?.ToString()
 
             If String.IsNullOrEmpty(entryId) Then
-                MessageBox.Show("无法获取邮件EntryID", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                Globals.ThisAddIn.ShowErrorWithConfig("无法获取邮件EntryID", "操作失败")
                 Return
             End If
 
@@ -8146,11 +8245,11 @@ UpdateUI:
                     OutlookMyList.Utils.OutlookUtils.SafeReleaseComObject(mailItem)
                 End Try
             Else
-                MessageBox.Show("无法获取邮件项", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                Globals.ThisAddIn.ShowErrorWithConfig("无法获取邮件项", "操作失败")
             End If
         Catch ex As System.Exception
             Debug.WriteLine($"ShowTaskStatus_Click error: {ex.Message}")
-            MessageBox.Show($"获取任务状态时出错: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            Globals.ThisAddIn.ShowErrorWithConfig("获取任务状态时出错", ex.Message)
         End Try
     End Sub
 
@@ -8218,7 +8317,7 @@ UpdateUI:
                                 ' 刷新邮件列表以反映更改
                                 UpdateMailList(currentConversationId, entryId)
                             Else
-                                MessageBox.Show("清除自定义会话ID失败", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                                Globals.ThisAddIn.ShowErrorWithConfig("清除自定义会话ID失败", "操作失败")
                             End If
                         Else
                             ' 用户输入了新的自定义会话ID
@@ -8235,7 +8334,7 @@ UpdateUI:
                                 ' 刷新邮件列表以反映更改
                                 UpdateMailList(currentConversationId, entryId)
                             Else
-                                MessageBox.Show("设置自定义会话ID失败", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                                Globals.ThisAddIn.ShowErrorWithConfig("设置自定义会话ID失败", "操作失败")
                             End If
                         End If
                     End If
@@ -8271,7 +8370,7 @@ UpdateUI:
                                 MessageBox.Show("自定义会话ID已清除", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information)
                                 UpdateMailList(currentConversationId, entryId)
                             Else
-                                MessageBox.Show("清除自定义会话ID失败", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                                Globals.ThisAddIn.ShowErrorWithConfig("清除自定义会话ID失败", "操作失败")
                             End If
                         Else
                             ' 用户确认设置新的自定义会话ID
@@ -8288,7 +8387,7 @@ UpdateUI:
                                 MessageBox.Show($"自定义会话ID已设置为: {trimmedId}", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information)
                                 UpdateMailList(currentConversationId, entryId)
                             Else
-                                MessageBox.Show("设置自定义会话ID失败", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                                Globals.ThisAddIn.ShowErrorWithConfig("设置自定义会话ID失败", "操作失败")
                             End If
                         End If
                     End Using

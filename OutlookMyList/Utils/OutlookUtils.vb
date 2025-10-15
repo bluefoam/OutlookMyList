@@ -61,6 +61,67 @@ Namespace OutlookMyList.Utils
         End Function
 
         ''' <summary>
+        ''' 检查邮件项是否已完全加载
+        ''' </summary>
+        ''' <param name="item">邮件项对象</param>
+        ''' <returns>如果邮件项已完全加载则返回True，否则返回False</returns>
+        Public Shared Function IsMailItemReady(item As Object) As Boolean
+            If item Is Nothing Then
+                Return False
+            End If
+
+            Try
+                ' 尝试访问关键属性来判断邮件是否已完全加载
+                Dim entryId As String = ""
+                Dim subject As String = ""
+                
+                If TypeOf item Is Outlook.MailItem Then
+                    Dim mailItem = DirectCast(item, Outlook.MailItem)
+                    entryId = mailItem.EntryID
+                    subject = mailItem.Subject
+                    Dim receivedTime = mailItem.ReceivedTime
+                ElseIf TypeOf item Is Outlook.AppointmentItem Then
+                    Dim apptItem = DirectCast(item, Outlook.AppointmentItem)
+                    entryId = apptItem.EntryID
+                    subject = apptItem.Subject
+                ElseIf TypeOf item Is Outlook.MeetingItem Then
+                    Dim meetingItem = DirectCast(item, Outlook.MeetingItem)
+                    entryId = meetingItem.EntryID
+                    subject = meetingItem.Subject
+                Else
+                    Return False
+                End If
+
+                ' 如果关键属性都能访问，则认为邮件已完全加载
+                Return Not String.IsNullOrEmpty(entryId)
+            Catch ex As System.Runtime.InteropServices.COMException
+                ' COM异常通常表示对象未完全加载
+                Return False
+            Catch ex As System.Exception
+                ' 其他异常也视为未加载完成
+                Return False
+            End Try
+        End Function
+
+        ''' <summary>
+        ''' 异步等待邮件项加载完成
+        ''' </summary>
+        ''' <param name="item">邮件项对象</param>
+        ''' <param name="maxWaitMs">最大等待毫秒数</param>
+        ''' <param name="retryIntervalMs">重试间隔毫秒数</param>
+        ''' <returns>如果邮件项已加载完成则返回True，否则返回False</returns>
+        Public Shared Async Function WaitForMailItemReady(item As Object, maxWaitMs As Integer, Optional retryIntervalMs As Integer = 100) As Threading.Tasks.Task(Of Boolean)
+            Dim startTime As DateTime = DateTime.Now
+            While DateTime.Now.Subtract(startTime).TotalMilliseconds < maxWaitMs
+                If IsMailItemReady(item) Then
+                    Return True
+                End If
+                Await Threading.Tasks.Task.Delay(retryIntervalMs)
+            End While
+            Return False
+        End Function
+
+        ''' <summary>
         ''' 安全获取邮件项并验证类型
         ''' </summary>
         ''' <typeparam name="T">期望的邮件项类型</typeparam>

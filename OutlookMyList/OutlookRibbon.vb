@@ -51,7 +51,7 @@ Public Class OutlookRibbon
             settingsForm.ShowDialog()
         Catch ex As Exception
             Debug.WriteLine($"Error opening settings form: {ex.Message}")
-            MessageBox.Show($"打开设置窗口时出错：{ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            Globals.ThisAddIn.ShowErrorWithConfig("打开设置窗口时出错", ex.Message)
         End Try
     End Sub
 
