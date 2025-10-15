@@ -1,6 +1,6 @@
 Imports Microsoft.Office.Tools.Ribbon
-
 Imports System.Diagnostics
+Imports System.Windows.Forms
 
 Public Class OutlookRibbon
 
@@ -42,6 +42,17 @@ Public Class OutlookRibbon
     Private Sub ButtonMergeConversation_Click(sender As Object, e As RibbonControlEventArgs) Handles ButtonMergeConversation.Click
         ' 最简单方式：直接复用合并逻辑
         Globals.ThisAddIn.HandleMergeCustomConversation()
+    End Sub
+
+    Private Sub ButtonSettings_Click(sender As Object, e As RibbonControlEventArgs) Handles ButtonSettings.Click
+        ' 显示设置窗体
+        Try
+            Dim settingsForm As New ErrorNotificationSettingsForm()
+            settingsForm.ShowDialog()
+        Catch ex As Exception
+            Debug.WriteLine($"Error opening settings form: {ex.Message}")
+            MessageBox.Show($"打开设置窗口时出错：{ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        End Try
     End Sub
 
     ' 更新“合并自定义会话”按钮的启用状态

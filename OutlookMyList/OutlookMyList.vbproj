@@ -242,9 +242,12 @@
     <AppDesigner Include="My Project\" />
     <Compile Include="CustomConversationIdForm.vb" />
     <Compile Include="DirectMergeHelper.vb" />
+    <Compile Include="Models\ErrorNotificationSettings.vb" />
+    <Compile Include="ErrorNotificationSettingsForm.vb">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="Handlers\MailHandler.vb" />
     <Compile Include="Handlers\TaskHandler.vb" />
-    <Compile Include="ContextMenuRibbonXml.vb" />
     <Compile Include="OutlookRibbon.Designer.vb">
       <DependentUpon>OutlookRibbon.vb</DependentUpon>
     </Compile>
@@ -265,7 +268,6 @@
       <SubType>UserControl</SubType>
     </Compile>
     <Compile Include="Win32Helper.vb" />
-    <Compile Include="MouseFix.vb" />
     <Compile Include="TaskMonitor.vb" />
     <Compile Include="ThisAddIn.vb">
       <SubType>Code</SubType>

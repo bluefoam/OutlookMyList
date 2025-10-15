@@ -129,6 +129,7 @@ Namespace OutlookMyList.Utils
         ''' <param name="storeId">可选的StoreID，建议在 Flag 任务中提供以提升性能</param>
         ''' <returns>是否成功打开</returns>
         Public Shared Function FastOpenMailItem(entryId As String, Optional storeId As String = Nothing) As Boolean
+            Dim mailItem As Object = Nothing
             Try
                 If String.IsNullOrWhiteSpace(entryId) Then
                     System.Diagnostics.Debug.WriteLine("FastOpenMailItem: EntryID为空")
@@ -146,7 +147,7 @@ Namespace OutlookMyList.Utils
                     System.Diagnostics.Debug.WriteLine("FastOpenMailItem: 不在STA线程中，性能可能受影响")
                 End If
 
-                Dim mailItem As Object = SafeGetItemFromID(entryId, storeId)
+                mailItem = SafeGetItemFromID(entryId, storeId)
                 If mailItem IsNot Nothing Then
                     ' 直接显示邮件，False 参数表示非模态显示
                     If TypeOf mailItem Is Outlook.MailItem Then
@@ -181,6 +182,11 @@ Namespace OutlookMyList.Utils
             Catch ex As System.Exception
                 System.Diagnostics.Debug.WriteLine($"FastOpenMailItem 异常: {ex.Message}")
                 Return False
+            Finally
+                ' 确保释放COM对象
+                If mailItem IsNot Nothing Then
+                    SafeReleaseComObject(mailItem)
+                End If
             End Try
         End Function
 

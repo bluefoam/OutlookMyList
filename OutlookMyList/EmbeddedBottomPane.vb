@@ -11,6 +11,7 @@ Public Class EmbeddedBottomPane
     Private isEmbedded As Boolean = False
     Private outlookMainWindow As IntPtr = IntPtr.Zero
     Private readingPane As IntPtr = IntPtr.Zero
+    Private originalParent As IntPtr = IntPtr.Zero
 
     Public Sub New()
         InitializeComponent()
@@ -106,7 +107,7 @@ Public Class EmbeddedBottomPane
             End If
 
             ' 尝试嵌入面板
-            If Win32Helper.CreateBottomPanel(outlookMainWindow, readingPane, Me) Then
+            If Win32Helper.CreateBottomPanel(outlookMainWindow, readingPane, Me, originalParent) Then
                 isEmbedded = True
                 statusLabel.Text = "状态：已成功嵌入到Outlook"
                 Return True
@@ -195,19 +196,28 @@ Public Class EmbeddedBottomPane
     ' 清理资源
     Protected Overrides Sub Dispose(disposing As Boolean)
         If disposing Then
-            ' 如果已嵌入，尝试恢复原始窗口大小
-            If isEmbedded AndAlso readingPane <> IntPtr.Zero Then
+            ' 如果已嵌入，尝试恢复原始状态
+            If isEmbedded Then
                 Try
-                    Dim rect As Win32Helper.RECT
-                    If Win32Helper.GetWindowRect(readingPane, rect) Then
-                        ' 恢复阅读窗格的原始大小
-                        Win32Helper.SetWindowPos(readingPane, Win32Helper.HWND_TOP,
-                                                rect.Left, rect.Top,
-                                                rect.Width, rect.Height + 150,
-                                                Win32Helper.SWP_NOZORDER Or Win32Helper.SWP_NOACTIVATE)
+                    ' 恢复原始父窗口关系
+                    If originalParent <> IntPtr.Zero AndAlso Me.Handle <> IntPtr.Zero Then
+                        Win32Helper.SetParent(Me.Handle, originalParent)
+                        System.Diagnostics.Debug.WriteLine("已恢复原始父窗口关系")
+                    End If
+                    
+                    ' 恢复阅读窗格的原始大小
+                    If readingPane <> IntPtr.Zero Then
+                        Dim rect As Win32Helper.RECT
+                        If Win32Helper.GetWindowRect(readingPane, rect) Then
+                            Win32Helper.SetWindowPos(readingPane, Win32Helper.HWND_TOP,
+                                                    rect.Left, rect.Top,
+                                                    rect.Width, rect.Height + 150,
+                                                    Win32Helper.SWP_NOZORDER Or Win32Helper.SWP_NOACTIVATE)
+                            System.Diagnostics.Debug.WriteLine("已恢复阅读窗格大小")
+                        End If
                     End If
                 Catch ex As Exception
-                    System.Diagnostics.Debug.WriteLine("恢复窗口大小失败: " & ex.Message)
+                    System.Diagnostics.Debug.WriteLine("恢复原始状态失败: " & ex.Message)
                 End Try
             End If
         End If

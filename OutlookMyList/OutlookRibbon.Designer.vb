@@ -37,6 +37,7 @@ Partial Class OutlookRibbon
         Me.ToggleButtonPagination = Me.Factory.CreateRibbonToggleButton
         Me.ToggleButtonCacheEnabled = Me.Factory.CreateRibbonToggleButton
         Me.ButtonMergeConversation = Me.Factory.CreateRibbonButton
+        Me.ButtonSettings = Me.Factory.CreateRibbonButton
         Me.Tab1.SuspendLayout()
         Me.Group1.SuspendLayout()
         Me.SuspendLayout()
@@ -55,6 +56,7 @@ Partial Class OutlookRibbon
         Me.Group1.Items.Add(Me.ToggleButtonPagination)
         Me.Group1.Items.Add(Me.ToggleButtonCacheEnabled)
         Me.Group1.Items.Add(Me.ButtonMergeConversation)
+        Me.Group1.Items.Add(Me.ButtonSettings)
         Me.Group1.Label = "视图"
         Me.Group1.Name = "Group1"
         '
@@ -83,6 +85,12 @@ Partial Class OutlookRibbon
         Me.ButtonMergeConversation.Name = "ButtonMergeConversation"
         Me.ButtonMergeConversation.ScreenTip = "将所选邮件合并到同一自定义会话"
         '
+        'ButtonSettings
+        '
+        Me.ButtonSettings.Label = "设置"
+        Me.ButtonSettings.Name = "ButtonSettings"
+        Me.ButtonSettings.ScreenTip = "配置错误提醒和其他选项"
+        '
         'OutlookRibbon
         '
         Me.Name = "OutlookRibbon"
@@ -102,6 +110,7 @@ Partial Class OutlookRibbon
     Friend WithEvents ToggleButtonPagination As Microsoft.Office.Tools.Ribbon.RibbonToggleButton
     Friend WithEvents ToggleButtonCacheEnabled As Microsoft.Office.Tools.Ribbon.RibbonToggleButton
     Friend WithEvents ButtonMergeConversation As Microsoft.Office.Tools.Ribbon.RibbonButton
+    Friend WithEvents ButtonSettings As Microsoft.Office.Tools.Ribbon.RibbonButton
 End Class
 
 Partial Class ThisRibbonCollection

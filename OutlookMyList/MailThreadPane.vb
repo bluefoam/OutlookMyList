@@ -181,6 +181,8 @@ Public Class MailThreadPane
             If lvMails IsNot Nothing Then
                 lvMails.BackColor = backgroundColor
                 lvMails.ForeColor = foregroundColor
+                ' 强制刷新ListView以确保主题正确应用和鼠标状态正常
+                lvMails.Refresh()
                 Debug.WriteLine($"ListView主题已应用: 背景={lvMails.BackColor}, 前景={lvMails.ForeColor}")
             Else
                 Debug.WriteLine("警告: lvMails 为 Nothing")
@@ -190,6 +192,7 @@ Public Class MailThreadPane
             If taskList IsNot Nothing Then
                 taskList.BackColor = backgroundColor
                 taskList.ForeColor = foregroundColor
+                taskList.Refresh()
                 Debug.WriteLine("taskList主题已应用")
             Else
                 Debug.WriteLine("taskList尚未创建，主题将在创建后应用")
@@ -200,12 +203,14 @@ Public Class MailThreadPane
             If mailHistoryList IsNot Nothing Then
                 mailHistoryList.BackColor = backgroundColor
                 mailHistoryList.ForeColor = foregroundColor
+                mailHistoryList.Refresh()
             End If
 
             ' 应用到待办邮件列表
             If pendingMailList IsNot Nothing Then
                 pendingMailList.BackColor = backgroundColor
                 pendingMailList.ForeColor = foregroundColor
+                pendingMailList.Refresh()
             End If
 
             ' 应用到分隔控件 - 按正确顺序设置颜色以确保分割条颜色正确显示
@@ -956,14 +961,7 @@ Public Class MailThreadPane
             AddHandler splitter1.SplitterMoved, AddressOf Splitter_Moved
             AddHandler splitter2.SplitterMoved, AddressOf Splitter_Moved
             
-            ' 修复鼠标显示问题
-            Try
-                MouseFix.FixControlCursor(Me)
-                MouseFix.ResetCursor()
-                Debug.WriteLine("MailThreadPane鼠标修复已应用")
-            Catch mouseEx As Exception
-                Debug.WriteLine($"MailThreadPane鼠标修复时出错: {mouseEx.Message}")
-            End Try
+
         Catch ex As System.Exception
             Debug.WriteLine($"设置分隔位置出错: {ex.Message}")
         End Try
@@ -2301,9 +2299,40 @@ Public Class MailThreadPane
                     End If
                 End Try
             End If
+        Catch ex As System.Runtime.InteropServices.COMException
+            ' 记录调试信息
+            If ThisAddIn.ErrorSettings.LogErrorsToDebug Then
+                Debug.WriteLine($"OpenOutlookMail COM异常 (HRESULT: {ex.HResult:X8}): {ex.Message}")
+            End If
+            
+            ' 根据配置决定是否显示COM错误
+            If ThisAddIn.ErrorSettings.ShowErrorDialogs AndAlso ThisAddIn.ErrorSettings.ShowCOMErrorDialogs Then
+                If ThisAddIn.ErrorSettings.ShowOnlyFirstError Then
+                    If Not ThisAddIn.HasShownMailOpenError Then
+                        ThisAddIn.HasShownMailOpenError = True
+                        MessageBox.Show("无法打开邮件，可能已被删除或移动。后续类似错误将被静默处理。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                    End If
+                Else
+                    MessageBox.Show($"无法打开邮件：{ex.Message}", "COM错误", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                End If
+            End If
         Catch ex As System.Exception
-            Debug.WriteLine($"打开邮件出错: {ex.Message}")
-            MessageBox.Show("无法打开邮件，可能已被删除或移动。")
+            ' 记录调试信息
+            If ThisAddIn.ErrorSettings.LogErrorsToDebug Then
+                Debug.WriteLine($"OpenOutlookMail 异常: {ex.Message}")
+            End If
+            
+            ' 根据配置决定是否显示错误
+            If ThisAddIn.ErrorSettings.ShowErrorDialogs Then
+                If ThisAddIn.ErrorSettings.ShowOnlyFirstError Then
+                    If Not ThisAddIn.HasShownMailOpenError Then
+                        ThisAddIn.HasShownMailOpenError = True
+                        MessageBox.Show("无法打开邮件，可能已被删除或移动。后续类似错误将被静默处理。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                    End If
+                Else
+                    MessageBox.Show($"无法打开邮件：{ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                End If
+            End If
         End Try
     End Sub
 
@@ -4791,8 +4820,18 @@ Public Class MailThreadPane
                 End If
             End Try
 
+        Catch ex As System.Runtime.InteropServices.COMException
+            ' 记录调试信息
+            If ThisAddIn.ErrorSettings.LogErrorsToDebug Then
+                Debug.WriteLine($"SafeOpenOutlookMail COM异常 (HRESULT: {ex.HResult:X8}): {ex.Message}")
+            End If
+            ' SafeOpenOutlookMail 方法设计为绝不抛出异常，所以不显示错误对话框
         Catch ex As System.Exception
-            Debug.WriteLine($"安全打开邮件时出错: {ex.Message}")
+            ' 记录调试信息
+            If ThisAddIn.ErrorSettings.LogErrorsToDebug Then
+                Debug.WriteLine($"SafeOpenOutlookMail 异常: {ex.Message}")
+            End If
+            ' SafeOpenOutlookMail 方法设计为绝不抛出异常，所以不显示错误对话框
         End Try
     End Sub
 
@@ -5416,14 +5455,7 @@ Public Class MailThreadPane
                 Debug.WriteLine("跳过DocumentCompleted中的主题应用 - 不是邮件内容或Document为空")
             End If
 
-            ' 修复鼠标显示问题 - WebBrowser文档加载完成后
-            Try
-                MouseFix.FixControlCursor(Me)
-                MouseFix.ResetCursor()
-                Debug.WriteLine("WebBrowser文档加载完成后应用鼠标修复")
-            Catch mouseEx As System.Exception
-                Debug.WriteLine($"WebBrowser文档加载完成鼠标修复失败: {mouseEx.Message}")
-            End Try
+
         Catch ex As System.Exception
             Debug.WriteLine($"WebBrowser_DocumentCompleted error: {ex.Message}")
         End Try
@@ -6729,14 +6761,7 @@ UpdateUI:
                                    lvMails.VirtualListSize = allItems.Count
                                    lvMails.EndUpdate()
 
-                                   ' 修复鼠标显示问题 - 虚拟模式更新后
-                                   Try
-                                       MouseFix.FixControlCursor(Me)
-                                       MouseFix.ResetCursor()
-                                       Debug.WriteLine("虚拟模式邮件列表更新后应用鼠标修复")
-                                   Catch ex As System.Exception
-                                       Debug.WriteLine($"虚拟模式鼠标修复失败: {ex.Message}")
-                                   End Try
+
 
                                    Debug.WriteLine($"虚拟模式启用: 总项目={allItems.Count}，依赖RetrieveVirtualItem事件显示")
                                Else
@@ -6777,14 +6802,7 @@ UpdateUI:
 
                                    lvMails.EndUpdate()
 
-                                   ' 修复鼠标显示问题 - 非虚拟模式更新后
-                                   Try
-                                       MouseFix.FixControlCursor(Me)
-                                       MouseFix.ResetCursor()
-                                       Debug.WriteLine("非虚拟模式邮件列表更新后应用鼠标修复")
-                                   Catch ex As System.Exception
-                                       Debug.WriteLine($"非虚拟模式鼠标修复失败: {ex.Message}")
-                                   End Try
+
                                End If
 
                                ' 设置排序
@@ -6811,14 +6829,7 @@ UpdateUI:
                                If Not isVirtualMode Then
                                    Try
                                        lvMails.EndUpdate()
-                                       ' 修复鼠标显示问题 - Finally块中的EndUpdate后
-                                       Try
-                                           MouseFix.FixControlCursor(Me)
-                                           MouseFix.ResetCursor()
-                                           Debug.WriteLine("Finally块邮件列表更新后应用鼠标修复")
-                                       Catch mouseEx As System.Exception
-                                           Debug.WriteLine($"Finally块鼠标修复失败: {mouseEx.Message}")
-                                       End Try
+
                                    Catch
                                        ' 忽略重复EndUpdate错误
                                    End Try
@@ -7050,14 +7061,7 @@ UpdateUI:
         Finally
             lvMails.EndUpdate()
 
-            ' 修复鼠标显示问题 - 同步版本邮件列表更新后
-            Try
-                MouseFix.FixControlCursor(Me)
-                MouseFix.ResetCursor()
-                Debug.WriteLine("同步版本邮件列表更新后应用鼠标修复")
-            Catch ex As System.Exception
-                Debug.WriteLine($"同步版本鼠标修复失败: {ex.Message}")
-            End Try
+
 
             ' 释放 COM 对象
             If conversation IsNot Nothing Then
@@ -7676,14 +7680,7 @@ UpdateUI:
                 Debug.WriteLine($"lvMails_SelectedIndexChanged: 邮件ID相同，跳过更新")
             End If
 
-            ' 修复鼠标显示问题 - lvMails选中事件后
-            Try
-                MouseFix.FixControlCursor(Me)
-                MouseFix.ResetCursor()
-                Debug.WriteLine("lvMails选中事件后应用鼠标修复")
-            Catch mouseEx As System.Exception
-                Debug.WriteLine($"lvMails选中事件鼠标修复失败: {mouseEx.Message}")
-            End Try
+
         Catch ex As System.Exception
             Debug.WriteLine($"lvMails_SelectedIndexChanged error: {ex.Message}")
         End Try
@@ -7763,14 +7760,7 @@ UpdateUI:
                 Debug.WriteLine($"跳过WebView更新 - mailBrowser IsNot Nothing: {mailBrowser IsNot Nothing}, IsHandleCreated: {If(mailBrowser IsNot Nothing, mailBrowser.IsHandleCreated, False)}, suppressWebViewUpdate: {suppressWebViewUpdate}")
             End If
 
-            ' 修复鼠标显示问题 - WebView内容加载后
-            Try
-                MouseFix.FixControlCursor(Me)
-                MouseFix.ResetCursor()
-                Debug.WriteLine("WebView内容加载后应用鼠标修复")
-            Catch mouseEx As System.Exception
-                Debug.WriteLine($"WebView内容加载鼠标修复失败: {mouseEx.Message}")
-            End Try
+
         Catch ex As System.Exception
             Debug.WriteLine($"LoadMailContentDeferred error: {ex.Message}")
             Debug.WriteLine($"LoadMailContentDeferred StackTrace: {ex.StackTrace}")
@@ -7841,35 +7831,84 @@ UpdateUI:
 
     Private Sub lvMails_DoubleClick(sender As Object, e As EventArgs)
         Try
-            If lvMails.SelectedItems.Count > 0 Then
-                Dim selectedItem As ListViewItem = lvMails.SelectedItems(0)
-                Dim mailId As String = ConvertEntryIDToString(selectedItem.Tag)
-                If Not String.IsNullOrEmpty(mailId) Then
-                    ' 优先使用快速打开（可进一步传StoreID优化）
-                    If Not OutlookMyList.Utils.OutlookUtils.FastOpenMailItem(mailId) Then
-                        ' 兜底：GetItemFromID + Display
-                        Dim mailItem As Object = OutlookMyList.Utils.OutlookUtils.SafeGetItemFromID(mailId)
+            ' 添加空值检查
+            If lvMails Is Nothing Then
+                Debug.WriteLine("lvMails_DoubleClick: lvMails为Nothing")
+                Return
+            End If
+
+            If lvMails.SelectedItems Is Nothing OrElse lvMails.SelectedItems.Count = 0 Then
+                Debug.WriteLine("lvMails_DoubleClick: 没有选中项")
+                Return
+            End If
+
+            Dim selectedItem As ListViewItem = lvMails.SelectedItems(0)
+            If selectedItem Is Nothing Then
+                Debug.WriteLine("lvMails_DoubleClick: 选中项为Nothing")
+                Return
+            End If
+
+            Dim mailId As String = ""
+            Try
+                mailId = ConvertEntryIDToString(selectedItem.Tag)
+            Catch ex As System.Exception
+                Debug.WriteLine($"lvMails_DoubleClick: ConvertEntryIDToString异常: {ex.Message}")
+                Return
+            End Try
+
+            If String.IsNullOrEmpty(mailId) Then
+                Debug.WriteLine("lvMails_DoubleClick: EntryID为空")
+                Return
+            End If
+
+            ' 使用更安全的方式打开邮件
+            Try
+                ' 优先使用快速打开（可进一步传StoreID优化）
+                Dim openResult As Boolean = False
+                Try
+                    openResult = OutlookMyList.Utils.OutlookUtils.FastOpenMailItem(mailId)
+                Catch ex As System.Exception
+                    Debug.WriteLine($"lvMails_DoubleClick: FastOpenMailItem异常: {ex.Message}")
+                    openResult = False
+                End Try
+
+                If Not openResult Then
+                    ' 兜底：GetItemFromID + Display
+                    Dim mailItem As Object = Nothing
+                    Try
+                        mailItem = OutlookMyList.Utils.OutlookUtils.SafeGetItemFromID(mailId)
                         If mailItem IsNot Nothing Then
                             Try
                                 mailItem.Display()
-                            Finally
+                                Debug.WriteLine($"lvMails_DoubleClick: 邮件打开成功 EntryID={mailId}")
+                            Catch displayEx As System.Exception
+                                Debug.WriteLine($"lvMails_DoubleClick: Display异常: {displayEx.Message}")
+                            End Try
+                        Else
+                            Debug.WriteLine($"lvMails_DoubleClick: 无法获取邮件项 EntryID={mailId}")
+                        End If
+                    Finally
+                        If mailItem IsNot Nothing Then
+                            Try
                                 OutlookMyList.Utils.OutlookUtils.SafeReleaseComObject(mailItem)
+                            Catch releaseEx As System.Exception
+                                Debug.WriteLine($"lvMails_DoubleClick: 释放COM对象异常: {releaseEx.Message}")
                             End Try
                         End If
-                    End If
+                    End Try
+                Else
+                    Debug.WriteLine($"lvMails_DoubleClick: 快速打开成功 EntryID={mailId}")
                 End If
-            End If
-
-            ' 修复鼠标显示问题 - lvMails双击事件后
-            Try
-                MouseFix.FixControlCursor(Me)
-                MouseFix.ResetCursor()
-                Debug.WriteLine("lvMails双击事件后应用鼠标修复")
-            Catch mouseEx As System.Exception
-                Debug.WriteLine($"lvMails双击事件鼠标修复失败: {mouseEx.Message}")
+            Catch ex As System.Exception
+                Debug.WriteLine($"lvMails_DoubleClick: 打开邮件过程异常: {ex.Message}")
             End Try
+
+        Catch ex As System.Runtime.InteropServices.COMException
+            ' COM异常静默处理，只记录调试信息，绝不抛出
+            Debug.WriteLine($"lvMails_DoubleClick COM异常 (HRESULT: {ex.HResult:X8}): {ex.Message}")
         Catch ex As System.Exception
-            Debug.WriteLine("lvMails_DoubleClick error: " & ex.Message)
+            ' 其他异常也静默处理，绝不抛出，避免弹出错误对话框
+            Debug.WriteLine($"lvMails_DoubleClick 异常: {ex.Message}")
         End Try
     End Sub
 
@@ -7916,8 +7955,12 @@ UpdateUI:
                     End If
                 End If
             End If
+        Catch ex As System.Runtime.InteropServices.COMException
+            ' COM异常静默处理，只记录调试信息，绝不抛出
+            Debug.WriteLine($"TaskList_DoubleClick COM异常 (HRESULT: {ex.HResult:X8}): {ex.Message}")
         Catch ex As System.Exception
-            Debug.WriteLine("TaskList_DoubleClick error: " & ex.Message)
+            ' 其他异常也静默处理，绝不抛出，避免弹出错误对话框
+            Debug.WriteLine($"TaskList_DoubleClick 异常: {ex.Message}")
         End Try
     End Sub
     Private Async Sub BtnAddTask_Click(sender As Object, e As EventArgs)
@@ -7953,14 +7996,7 @@ UpdateUI:
             ' 应用排序
             lvMails.ListViewItemSorter = New ListViewItemComparer(column, currentSortOrder)
 
-            ' 修复鼠标显示问题 - lvMails列点击事件后
-            Try
-                MouseFix.FixControlCursor(Me)
-                MouseFix.ResetCursor()
-                Debug.WriteLine("lvMails列点击事件后应用鼠标修复")
-            Catch mouseEx As System.Exception
-                Debug.WriteLine($"lvMails列点击事件鼠标修复失败: {mouseEx.Message}")
-            End Try
+
         Catch ex As System.Exception
             Debug.WriteLine("lvMails_ColumnClick error: " & ex.Message)
         End Try
@@ -8948,15 +8984,6 @@ UpdateUI:
         Finally
             If pendingMailListView IsNot Nothing Then
                 pendingMailListView.EndUpdate()
-                
-                ' 修复鼠标显示问题 - 待办邮件列表更新后
-                Try
-                    MouseFix.FixControlCursor(Me)
-                    MouseFix.ResetCursor()
-                    Debug.WriteLine("待办邮件列表更新后应用鼠标修复")
-                Catch ex As System.Exception
-                    Debug.WriteLine($"待办邮件列表鼠标修复失败: {ex.Message}")
-                End Try
             End If
         End Try
     End Sub
@@ -9018,8 +9045,12 @@ UpdateUI:
                 ' 双击时在Outlook中打开邮件
                 SafeOpenOutlookMail(entryId)
             End If
+        Catch ex As System.Runtime.InteropServices.COMException
+            ' COM异常静默处理，只记录调试信息，绝不抛出
+            Debug.WriteLine($"MailHistory_DoubleClick COM异常 (HRESULT: {ex.HResult:X8}): {ex.Message}")
         Catch ex As System.Exception
-            Debug.WriteLine($"MailHistory_DoubleClick error: {ex.Message}")
+            ' 其他异常也静默处理，绝不抛出，避免弹出错误对话框
+            Debug.WriteLine($"MailHistory_DoubleClick 异常: {ex.Message}")
         End Try
     End Sub
 

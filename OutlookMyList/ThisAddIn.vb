@@ -49,6 +49,24 @@ Public Class ThisAddIn
     ' 全局缓存开关
     Public Property CacheEnabled As Boolean = True
     
+    ' 错误提醒配置
+    Public Shared ReadOnly Property ErrorSettings As ErrorNotificationSettings
+        Get
+            Return ErrorNotificationSettings.Instance
+        End Get
+    End Property
+    
+    ' 全局错误抑制标志 - 防止重复弹出错误对话框
+    Private Shared _hasShownMailOpenError As Boolean = False
+    Public Shared Property HasShownMailOpenError As Boolean
+        Get
+            Return _hasShownMailOpenError
+        End Get
+        Set(value As Boolean)
+            _hasShownMailOpenError = value
+        End Set
+    End Property
+    
     ' 添加CommandBar相关变量
     Private mergeConversationButton As Microsoft.Office.Core.CommandBarButton
 
@@ -456,6 +474,14 @@ Public Class ThisAddIn
     End Property
 
     Private Sub ThisAddIn_Shutdown() Handles Me.Shutdown
+        ' 移除全局异常处理程序，防止影响其他Office应用
+        Try
+            RemoveHandler AppDomain.CurrentDomain.UnhandledException, AddressOf GlobalUnhandledExceptionHandler
+            RemoveHandler System.Windows.Forms.Application.ThreadException, AddressOf GlobalThreadExceptionHandler
+        Catch ex As Exception
+            Debug.WriteLine($"移除全局异常处理程序时出错: {ex.Message}")
+        End Try
+
         ' 注销事件处理程序
         If currentExplorer IsNot Nothing Then
             ' 显式移除事件处理程序
@@ -536,6 +562,8 @@ Public Class ThisAddIn
         If bottomPane IsNot Nothing Then
             bottomPane.Dispose()
         End If
+        
+
     End Sub
 
     ' 注释掉 ItemLoad 事件处理，避免会话邮件加载过程中的大量 COM 异常
@@ -699,8 +727,21 @@ Public Class ThisAddIn
                                                             End Sub
                 End If
             End If
+        Catch ex As System.Runtime.InteropServices.COMException
+            ' COM异常静默处理，只记录调试信息
+            Debug.WriteLine($"Inspectors_NewInspector COM异常 (HRESULT: {ex.HResult:X8}): {ex.Message}")
+            If Not HasShownMailOpenError Then
+                 HasShownMailOpenError = True
+                ' 第一次错误时可以选择显示提示
+                ' MessageBox.Show("创建邮件窗口时遇到问题，后续类似错误将被静默处理。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            End If
         Catch ex As Exception
-            Debug.WriteLine($"Error creating Inspector task pane: {ex.Message}")
+            Debug.WriteLine($"Inspectors_NewInspector 异常: {ex.Message}")
+            If Not HasShownMailOpenError Then
+                 HasShownMailOpenError = True
+                 ' 第一次错误时显示提示，后续静默处理
+                 MessageBox.Show("创建邮件窗口时遇到问题，后续类似错误将被静默处理。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            End If
         End Try
     End Sub
 
@@ -742,8 +783,21 @@ Public Class ThisAddIn
                                                             End Try
                                                         End Sub
             End If
+        Catch ex As System.Runtime.InteropServices.COMException
+            ' COM异常静默处理，只记录调试信息
+            Debug.WriteLine($"InspectorActivate COM异常 (HRESULT: {ex.HResult:X8}): {ex.Message}")
+            If Not HasShownMailOpenError Then
+                 HasShownMailOpenError = True
+                 ' 第一次错误时可以选择显示提示
+                 ' MessageBox.Show("激活邮件窗口时遇到问题，后续类似错误将被静默处理。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            End If
         Catch ex As Exception
-            Debug.WriteLine($"Error handling Inspector activate event: {ex.Message}")
+            Debug.WriteLine($"InspectorActivate 异常: {ex.Message}")
+            If Not HasShownMailOpenError Then
+                 HasShownMailOpenError = True
+                 ' 第一次错误时显示提示，后续静默处理
+                 MessageBox.Show("激活邮件窗口时遇到问题，后续类似错误将被静默处理。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            End If
         End Try
     End Sub
 
@@ -778,8 +832,40 @@ Public Class ThisAddIn
             If Not String.IsNullOrEmpty(mailEntryID) Then
                 inspectorPane.UpdateMailList(conversationID, mailEntryID)
             End If
+        Catch ex As System.Runtime.InteropServices.COMException
+            ' 记录调试信息
+            If ErrorSettings.LogErrorsToDebug Then
+                Debug.WriteLine($"UpdateInspectorMailContent COM异常 (HRESULT: {ex.HResult:X8}): {ex.Message}")
+            End If
+            
+            ' 根据配置决定是否显示COM错误
+            If ErrorSettings.ShowErrorDialogs AndAlso ErrorSettings.ShowCOMErrorDialogs Then
+                If ErrorSettings.ShowOnlyFirstError Then
+                    If Not HasShownMailOpenError Then
+                        HasShownMailOpenError = True
+                        MessageBox.Show("邮件加载时遇到COM问题，后续类似错误将被静默处理。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                    End If
+                Else
+                    MessageBox.Show($"邮件加载时遇到COM问题：{ex.Message}", "COM错误", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                End If
+            End If
         Catch ex As Exception
-            Debug.WriteLine($"Error updating Inspector mail content: {ex.Message}")
+            ' 记录调试信息
+            If ErrorSettings.LogErrorsToDebug Then
+                Debug.WriteLine($"UpdateInspectorMailContent 异常: {ex.Message}")
+            End If
+            
+            ' 根据配置决定是否显示错误
+            If ErrorSettings.ShowErrorDialogs Then
+                If ErrorSettings.ShowOnlyFirstError Then
+                    If Not HasShownMailOpenError Then
+                        HasShownMailOpenError = True
+                        MessageBox.Show("邮件加载时遇到问题，后续类似错误将被静默处理。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                    End If
+                Else
+                    MessageBox.Show($"邮件加载时遇到问题：{ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                End If
+            End If
         End Try
     End Sub
 
@@ -1113,15 +1199,7 @@ Public Class ThisAddIn
         ' 初始化CommandBar右键菜单 - 延迟执行以确保Outlook完全加载
         System.Threading.Tasks.Task.Delay(2000).ContinueWith(Sub() InitializeCommandBars())
         
-        ' 修复鼠标显示问题 - 延迟执行以确保UI完全加载
-        System.Threading.Tasks.Task.Delay(1000).ContinueWith(Sub() 
-            Try
-                MouseFix.ComprehensiveMouseFix()
-                Debug.WriteLine("鼠标修复已应用")
-            Catch ex As Exception
-                Debug.WriteLine($"应用鼠标修复时出错: {ex.Message}")
-            End Try
-        End Sub)
+
     End Sub
 
     Private Sub GlobalUnhandledExceptionHandler(sender As Object, e As UnhandledExceptionEventArgs)
@@ -1233,6 +1311,8 @@ Public Class ThisAddIn
                 mailThreadPane.BeginInvoke(Sub() UpdateMailContent(currentItem))
             End If
         End If
+        
+
     End Sub
 
     Private Sub LoadCacheEnabledFromRegistry()

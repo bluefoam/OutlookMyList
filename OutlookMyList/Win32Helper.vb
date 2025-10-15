@@ -123,7 +123,7 @@ Public Class Win32Helper
     End Function
 
     ' 在指定窗口下方创建自定义面板
-    Public Shared Function CreateBottomPanel(parentWindow As IntPtr, targetWindow As IntPtr, panelControl As Control) As Boolean
+    Public Shared Function CreateBottomPanel(parentWindow As IntPtr, targetWindow As IntPtr, panelControl As Control, ByRef originalParent As IntPtr) As Boolean
         Try
             ' 获取目标窗口的位置和大小
             Dim targetRect As RECT
@@ -171,8 +171,8 @@ Public Class Win32Helper
             End If
 
             ' 设置面板的父窗口为Outlook主窗口
-            Dim oldParent As IntPtr = SetParent(panelControl.Handle, parentWindow)
-            System.Diagnostics.Debug.WriteLine($"设置父窗口，旧父窗口: {oldParent}")
+            originalParent = SetParent(panelControl.Handle, parentWindow)
+            System.Diagnostics.Debug.WriteLine($"设置父窗口，旧父窗口: {originalParent}")
 
             ' 定位面板到计算的位置
             Dim result As Boolean = SetWindowPos(panelControl.Handle, HWND_TOP, 
