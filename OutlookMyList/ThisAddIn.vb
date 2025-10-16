@@ -52,7 +52,6 @@ Public Class ThisAddIn
     ' Inspector错误显示控制变量
     Private hasShownInspectorCOMError As Boolean = False
     Private hasShownInspectorError As Boolean = False
-    Public Shared HasShownMailOpenError As Boolean = False
     
     ' 错误提醒配置
     Public Shared ReadOnly Property ErrorSettings As ErrorNotificationSettings
@@ -78,7 +77,7 @@ Public Class ThisAddIn
             Else
                 MessageBox.Show($"{title}：{message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Warning)
             End If
-        Catch ex As Exception
+        Catch ex As System.Exception
             ' 防止错误显示本身出错
             Debug.WriteLine($"显示错误对话框时出错: {ex.Message}")
         End Try
@@ -114,7 +113,7 @@ Public Class ThisAddIn
             For Each bar As Microsoft.Office.Core.CommandBar In commandBars
                 Try
                     Debug.WriteLine($"CommandBar名称: '{bar.Name}', 类型: {bar.Type}, 可见: {bar.Visible}, 启用: {bar.Enabled}")
-                Catch ex As Exception
+                Catch ex As System.Exception
                     Debug.WriteLine($"无法访问CommandBar属性: {ex.Message}")
                 End Try
             Next
@@ -155,7 +154,7 @@ Public Class ThisAddIn
                                 Exit For
                             End If
                         End If
-                    Catch ex As Exception
+                    Catch ex As System.Exception
                         Debug.WriteLine($"检查CommandBar时出错: {ex.Message}")
                     End Try
                 Next
@@ -196,7 +195,7 @@ Public Class ThisAddIn
             Debug.WriteLine($"成功添加菜单项到CommandBar: {contextMenu.Name}")
             LogInfo($"成功添加菜单项到CommandBar: {contextMenu.Name}")
             
-        Catch ex As Exception
+        Catch ex As System.Exception
             Debug.WriteLine("初始化CommandBar失败: " & ex.Message)
             Debug.WriteLine($"错误详情: {ex.StackTrace}")
             LogException(ex, "InitializeCommandBars")
@@ -600,7 +599,7 @@ Public Class ThisAddIn
         Try
             Win32Helper.RestoreSystemCursors()
             Debug.WriteLine("已恢复系统鼠标光标状态")
-        Catch ex As Exception
+        Catch ex As System.Exception
             Debug.WriteLine($"恢复系统鼠标光标时出错: {ex.Message}")
         End Try
 
@@ -1588,7 +1587,7 @@ Public Class ThisAddIn
             If Globals.Ribbons IsNot Nothing AndAlso Globals.Ribbons.Ribbon1 IsNot Nothing Then
                 Globals.Ribbons.Ribbon1.UpdatePaginationButtonState(enabled)
             End If
-        Catch ex As Exception
+        Catch ex As System.Exception
             Debug.WriteLine($"Error updating pagination button state: {ex.Message}")
         End Try
     End Sub

@@ -245,6 +245,7 @@ Public Class MailThreadPane
                 pendingMailList.Refresh()
             End If
 
+<<<<<<< HEAD
             ' 应用到来往邮件TreeView - 添加空值检查防止NullReferenceException
             If tabControl IsNot Nothing AndAlso tabControl.TabPages.ContainsKey("来往邮件") Then
                 Dim mailInteractionTabPage As TabPage = tabControl.TabPages("来往邮件")
@@ -274,26 +275,23 @@ Public Class MailThreadPane
             End If
 
             ' 应用到分隔控件 - 按正确顺序设置颜色以确保分割条颜色正确显示
+=======
+            ' 应用到分隔控件 - 保持分割条的视觉界限效果
+>>>>>>> 675435e (提交当前真题目录)
             If splitter1 IsNot Nothing Then
-                ' 先设置面板颜色为非默认值，防止继承分割条颜色
-                splitter1.Panel1.BackColor = Color.White
-                splitter1.Panel2.BackColor = Color.White
-                ' 设置分割条颜色（通过SplitContainer的BackColor）
-                splitter1.BackColor = backgroundColor
-                ' 最后设置面板为正确的主题颜色
+                ' 设置面板为主题颜色
                 splitter1.Panel1.BackColor = backgroundColor
                 splitter1.Panel2.BackColor = backgroundColor
+                ' 保持分割条的深灰色以增强视觉界限（不随主题变化）
+                ' splitter1.BackColor 保持为 Color.FromArgb(70, 70, 70)
             End If
 
             If splitter2 IsNot Nothing Then
-                ' 先设置面板颜色为非默认值，防止继承分割条颜色
-                splitter2.Panel1.BackColor = Color.White
-                splitter2.Panel2.BackColor = Color.White
-                ' 设置分割条颜色（通过SplitContainer的BackColor）
-                splitter2.BackColor = backgroundColor
-                ' 最后设置面板为正确的主题颜色
+                ' 设置面板为主题颜色
                 splitter2.Panel1.BackColor = backgroundColor
                 splitter2.Panel2.BackColor = backgroundColor
+                ' 保持分割条的深灰色以增强视觉界限（不随主题变化）
+                ' splitter2.BackColor 保持为 Color.FromArgb(70, 70, 70)
             End If
 
             ' 应用到WebBrowser
@@ -834,27 +832,35 @@ Public Class MailThreadPane
     End Sub
 
     Private Sub InitializeSplitContainers()
-        ' 创建第一个分隔控件
+        ' 创建第一个分隔控件 - 增强视觉界限
         splitter1 = New SplitContainer With {
             .Dock = DockStyle.Fill,
             .Orientation = Orientation.Horizontal,
             .Panel1MinSize = 100,
             .Panel2MinSize = 150,
-            .SplitterWidth = 5,
-            .BackColor = currentBackColor  ' 设置分割条颜色
+            .SplitterWidth = 2,
+            .BackColor = currentBackColor, ’Color.FromArgb(70, 70, 70),  ' 深灰色分割条增强视觉界限
+            .BorderStyle = BorderStyle.FixedSingle    ' 添加边框增强界限
         }
         ' 明确设置面板颜色以避免继承分割条颜色
         splitter1.Panel1.BackColor = currentBackColor
         splitter1.Panel2.BackColor = currentBackColor
 
-        ' 创建第二个分隔控件
+        ' 创建第二个分隔控件 - 增强视觉界限
         splitter2 = New SplitContainer With {
             .Dock = DockStyle.Fill,
             .Orientation = Orientation.Horizontal,
             .Panel1MinSize = 100,
+<<<<<<< HEAD
             .Panel2MinSize = 30,  ' 减小最小尺寸让侧边栏更窄
             .SplitterWidth = 5,
             .BackColor = currentBackColor  ' 设置分割条颜色
+=======
+            .Panel2MinSize = 50,
+            .SplitterWidth = 2,
+            .BackColor = currentBackColor, 'Color.FromArgb(70, 70, 70),  ' 深灰色分割条增强视觉界限
+            .BorderStyle = BorderStyle.FixedSingle    ' 添加边框增强界限
+>>>>>>> 675435e (提交当前真题目录)
         }
         ' 明确设置面板颜色以避免继承分割条颜色
         splitter2.Panel1.BackColor = currentBackColor
@@ -913,7 +919,7 @@ Public Class MailThreadPane
             .Dock = DockStyle.Bottom,
             .TextAlign = ContentAlignment.MiddleCenter,
             .Visible = False,
-            .Height = 25 ' 设置一个与分页栏相似的高度
+            .Height = 20 ' 设置一个与分页栏相似的高度
         }
 
         ' 将进度标签添加到主控件
@@ -1219,13 +1225,21 @@ Public Class MailThreadPane
             doubleBufferedProperty.SetValue(lvMails, True, Nothing)
         End If
 
-        lvMails.Columns.Add("----", 50)  ' 增加宽度以适应更大的图标
-        lvMails.Columns.Add("日期", 120) ' 宽度适配“yyyy-MM-dd HH:mm”
+        With lvMails.Columns.Add("----", 50)  ' 增加宽度以适应更大的图标
+            '.BackColor = Color.Transparent
+        End With
+        
+        With lvMails.Columns.Add("日期", 120) ' 宽度适配“yyyy-MM-dd HH:mm”
+            '.BackColor = Color.Transparent
+        End With
+        
         With lvMails.Columns.Add("发件人", 100)
             .TextAlign = HorizontalAlignment.Left
+            '.BackColor = Color.Transparent
         End With
         With lvMails.Columns.Add("主题", 300)
             .TextAlign = HorizontalAlignment.Left
+            '.BackColor = Color.Transparent
         End With
 
         ' 设置文本省略模式
@@ -1233,9 +1247,9 @@ Public Class MailThreadPane
         '    column.Width = -2  ' 自动调整列宽以适应内容
         'Next
 
-        ' 创建分页导航面板
+        ' 创建分页导航面板（压缩高度）
         Dim paginationPanel As New Panel With {
-            .Height = 25,
+            .Height = 20,
             .Dock = DockStyle.Bottom,
             .Padding = New Padding(0, 0, 0, 0)
         }
@@ -1244,40 +1258,40 @@ Public Class MailThreadPane
         ' 创建分页导航控件
         Dim btnFirstPage As New Button With {
             .Text = "首页",
-            .Size = New Size(50, 25),
-            .Location = New Point(5, 5)
+            .Size = New Size(45, 18),
+            .Location = New Point(5, 1)
         }
 
         Dim btnPrevPage As New Button With {
             .Text = "上页",
-            .Size = New Size(50, 25),
-            .Location = New Point(60, 5)
+            .Size = New Size(45, 18),
+            .Location = New Point(55, 1)
         }
 
         Dim lblPageInfo As New Label With {
             .Text = "第1页/共1页",
-            .Size = New Size(100, 25),
-            .Location = New Point(115, 8),
+            .Size = New Size(90, 18),
+            .Location = New Point(105, 1),
             .TextAlign = ContentAlignment.MiddleCenter,
             .BackColor = Color.Transparent
         }
 
         Dim btnNextPage As New Button With {
             .Text = "下页",
-            .Size = New Size(50, 25),
-            .Location = New Point(220, 5)
+            .Size = New Size(45, 18),
+            .Location = New Point(200, 1)
         }
 
         Dim btnLastPage As New Button With {
             .Text = "末页",
-            .Size = New Size(50, 25),
-            .Location = New Point(275, 5)
+            .Size = New Size(45, 18),
+            .Location = New Point(250, 1)
         }
 
         Dim lblItemCount As New Label With {
             .Text = "共0项",
-            .Size = New Size(80, 20),
-            .Location = New Point(330, 3),
+            .Size = New Size(70, 18),
+            .Location = New Point(300, 1),
             .TextAlign = ContentAlignment.MiddleLeft,
             .BackColor = Color.Transparent
         }
@@ -1285,10 +1299,11 @@ Public Class MailThreadPane
         ' 添加分页开关控件
         Dim chkPagination As New CheckBox With {
             .Text = "分页",
-            .Size = New Size(60, 25),
-            .Location = New Point(420, 5),
+            .Size = New Size(50, 18),
+            .Location = New Point(375, 1),
             .Checked = _isPaginationEnabled,
-            .BackColor = Color.Transparent
+            .BackColor = Color.Transparent,
+            .Visible = False
         }
 
         ' 添加分页开关事件处理
@@ -2970,7 +2985,7 @@ Public Class MailThreadPane
             suppressWebViewUpdate += 1
 
             ' 显示进度指示器
-            ShowProgress("正在收集联系人来往邮件信息...")
+            'ShowProgress("正在收集联系人来往邮件信息...")
 
             contactInfoTree.Nodes.Clear()
             Dim loading As New TreeNode("正在收集联系人来往邮件信息...")
