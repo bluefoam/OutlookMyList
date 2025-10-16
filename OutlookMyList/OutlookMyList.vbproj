@@ -240,7 +240,9 @@
   -->
   <ItemGroup>
     <AppDesigner Include="My Project\" />
-    <Compile Include="CustomConversationIdForm.vb" />
+    <Compile Include="CustomConversationIdForm.vb">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="DirectMergeHelper.vb" />
     <Compile Include="Models\ErrorNotificationSettings.vb" />
     <Compile Include="ErrorNotificationSettingsForm.vb">

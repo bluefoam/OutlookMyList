@@ -2,6 +2,7 @@ Imports Microsoft.Office.Interop.Outlook
 Imports System.Diagnostics
 Imports System.Drawing
 Imports System.Windows.Forms   ' 添加这行
+Imports OutlookMyList.Utils
 
 Namespace OutlookMyList.Handlers
     Public Class MailHandler
@@ -167,7 +168,7 @@ Namespace OutlookMyList.Handlers
                 Debug.WriteLine($"  最后更新时间: {MailThreadPane.globalThemeLastUpdate}")
                 
                 ' 检查邮件项是否已完全加载
-                If Not OutlookUtils.IsMailItemReady(mailItem) Then
+                If Not OutlookMyList.Utils.OutlookUtils.IsMailItemReady(mailItem) Then
                     Debug.WriteLine("邮件项未完全加载，跳过内容提取")
                     Return "<html><body><p>邮件内容加载中...</p></body></html>"
                 End If
@@ -191,6 +192,21 @@ Namespace OutlookMyList.Handlers
                             padding: 10px;
                             font-size: 12px;
                             margin: 0;
+                        }}
+                        /* 自定义滚动条样式 */
+                        ::-webkit-scrollbar {{
+                            width: 8px;
+                        }}
+                        ::-webkit-scrollbar-track {{
+                            background: {bgColor};
+                        }}
+                        ::-webkit-scrollbar-thumb {{
+                            background: {accentColor};
+                            border-radius: 4px;
+                        }}
+                        ::-webkit-scrollbar-thumb:hover {{
+                            background: {accentColor};
+                            opacity: 0.8;
                         }}
                         /* 覆盖所有可能的文本元素 */
                         p, div, span, td, th, li, ul, ol, a, em, i, b, strong, h1, h2, h3, h4, h5, h6 {{
@@ -288,6 +304,21 @@ Namespace OutlookMyList.Handlers
                             font-size: 12px;
                             margin: 0;
                         }}
+                        /* 自定义滚动条样式 */
+                        ::-webkit-scrollbar {{
+                            width: 8px;
+                        }}
+                        ::-webkit-scrollbar-track {{
+                            background: {bgColor};
+                        }}
+                        ::-webkit-scrollbar-thumb {{
+                            background: {accentColor};
+                            border-radius: 4px;
+                        }}
+                        ::-webkit-scrollbar-thumb:hover {{
+                            background: {accentColor};
+                            opacity: 0.8;
+                        }}
                         h4 {{
                             color: {accentColor} !important;
                             margin-top: 0;
@@ -340,6 +371,21 @@ Namespace OutlookMyList.Handlers
                             padding: 10px;
                             font-size: 12px;
                             margin: 0;
+                        }}
+                        /* 自定义滚动条样式 */
+                        ::-webkit-scrollbar {{
+                            width: 8px;
+                        }}
+                        ::-webkit-scrollbar-track {{
+                            background: {bgColor};
+                        }}
+                        ::-webkit-scrollbar-thumb {{
+                            background: {accentColor};
+                            border-radius: 4px;
+                        }}
+                        ::-webkit-scrollbar-thumb:hover {{
+                            background: {accentColor};
+                            opacity: 0.8;
                         }}
                         h4 {{
                             color: {accentColor} !important;

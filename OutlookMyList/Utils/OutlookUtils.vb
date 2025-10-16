@@ -252,7 +252,7 @@ Namespace OutlookMyList.Utils
         End Function
 
         ''' <summary>
-        ''' 获取邮件项的短格式EntryID
+        ''' 将长格式EntryID转换为短格式EntryID
         ''' </summary>
         ''' <param name="longEntryId">长格式EntryID</param>
         ''' <returns>短格式EntryID，如果获取失败则返回原始EntryID</returns>
@@ -267,15 +267,12 @@ Namespace OutlookMyList.Utils
                     Return longEntryId
                 End If
                 
-                ' 尝试通过长格式EntryID获取邮件项，然后读取其短格式EntryID
-                Dim mailItem As Object = SafeGetItemFromID(longEntryId)
-                If mailItem IsNot Nothing Then
-                    Dim shortEntryId As String = mailItem.EntryID
-                    SafeReleaseComObject(mailItem)
-                    Return shortEntryId
+                ' 长格式EntryID转换为短格式：取后48个字符
+                If longEntryId.Length >= 48 Then
+                    Return longEntryId.Substring(longEntryId.Length - 48)
                 End If
                 
-                ' 如果无法获取，返回原始ID
+                ' 如果长度不足，返回原始ID
                 Return longEntryId
             Catch ex As Exception
                 System.Diagnostics.Debug.WriteLine($"获取短格式EntryID失败: {ex.Message}")

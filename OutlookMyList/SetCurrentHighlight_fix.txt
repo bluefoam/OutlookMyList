@@ -1,0 +1,68 @@
+Public Sub SetCurrentHighlight(entryID As String)
+          Try
+              ' === 详细调试信息输出 ===
+              Debug.WriteLine(" === SetCurrentHighlight 调试开始 ===\)
+ Debug.WriteLine(\时间: \ & DateTime.Now.ToString(\HH:mm:ss.fff\))
+ Debug.WriteLine(\接收到EntryID: \ & entryID)
+ Debug.WriteLine(\EntryID长度: \ & If(entryID?.Length, 0))
+
+ ' 确保在UI线程上执行
+ If Me.InvokeRequired Then
+ Debug.WriteLine(\需要跨线程调用，使用Invoke\)
+ Me.Invoke(Sub() SetCurrentHighlight(entryID))
+ Return
+ End If
+
+ ' 检查lvMails控件是否可用
+ If lvMails Is Nothing Then
+ Debug.WriteLine(\错误: lvMails控件为null\)
+ Return
+ End If
+
+ If Not lvMails.IsHandleCreated Then
+ Debug.WriteLine(\警告: lvMails控件句柄尚未创建\)
+ ' 尝试强制创建句柄
+ Try
+ Dim handle = lvMails.Handle
+ Debug.WriteLine(\强制创建句柄结果: \ & handle)
+ Catch ex As Exception
+ Debug.WriteLine(\创建句柄失败: \ & ex.Message)
+ End Try
+ End If
+
+ If Not String.IsNullOrEmpty(entryID) Then
+ Dim normalizedEntryID As String = ConvertStringToHexFormat(entryID)
+ Dim shortEntryID As String = OutlookMyList.Utils.OutlookUtils.GetShortEntryID(normalizedEntryID)
+
+ Debug.WriteLine(\原始EntryID格式: \ & If(entryID.StartsWith(\0000\), \长格式\, If(entryID.StartsWith(\EF\), \短格式\, \未知格式\)))
+ Debug.WriteLine(\规范化EntryID: \ & normalizedEntryID)
+ Debug.WriteLine(\短格式EntryID: \ & shortEntryID)
+
+ ' 获取当前高亮状态
+ Dim currentHighlight As String = GetCurrentHighlightEntryID()
+ Debug.WriteLine(\当前高亮EntryID: \ & If(String.IsNullOrEmpty(currentHighlight), \无\, currentHighlight))
+
+ ' 检查lvMails中的项目总数
+ Debug.WriteLine(\lvMails项目总数: \ & lvMails.Items.Count)
+
+ ' 检查是否有匹配项
+ For Each item As ListViewItem In lvMails.Items
+ Dim itemEntryID As String = If(item.Tag IsNot Nothing, item.Tag.ToString(), \\)
+ If Not String.IsNullOrEmpty(itemEntryID) Then
+ Debug.WriteLine(\列表项EntryID: \ & itemEntryID.Substring(0, Math.Min(20, itemEntryID.Length)) & \...\)
+ End If
+ Next
+ Else
+ Debug.WriteLine(\接收到空EntryID\)
+ End If
+
+ Debug.WriteLine(\=== SetCurrentHighlight 调试结束 ===\)
+
+ ' 使用现有的私有方法，oldEntryID为空表示清除之前的高亮
+ UpdateHighlightByEntryID(String.Empty, entryID)
+ Debug.WriteLine(\高亮设置完成: UpdateHighlightByEntryID调用成功\)
+ Catch ex As System.Exception
+ Debug.WriteLine(\设置高亮时发生异常: \ & ex.Message)
+ Debug.WriteLine(\异常堆栈: \ & ex.StackTrace)
+ End Try
+ End Sub

@@ -61,16 +61,7 @@ Public Class ThisAddIn
         End Get
     End Property
     
-    ' 全局错误抑制标志 - 防止重复弹出错误对话框
-    Private Shared _hasShownMailOpenError As Boolean = False
-    Public Shared Property HasShownMailOpenError As Boolean
-        Get
-            Return _hasShownMailOpenError
-        End Get
-        Set(value As Boolean)
-            _hasShownMailOpenError = value
-        End Set
-    End Property
+
     
     ' 统一的错误显示方法
     Public Shared Sub ShowErrorWithConfig(title As String, message As String)
@@ -90,7 +81,7 @@ Public Class ThisAddIn
         Catch ex As Exception
             ' 防止错误显示本身出错
             Debug.WriteLine($"显示错误对话框时出错: {ex.Message}")
-        End Sub
+        End Try
     End Sub
     
     ' 添加CommandBar相关变量
@@ -967,8 +958,6 @@ Public Class ThisAddIn
             ' 静默处理所有异常，避免用户弹窗
             Debug.WriteLine("InspectorActivate: 异常已静默处理")
             ShowErrorWithConfig("激活邮件窗口时遇到问题", ex.Message)
-                End If
-            End If
         End Try
     End Sub
 
@@ -1072,6 +1061,10 @@ Public Class ThisAddIn
             Dim conversationID As String = String.Empty
             Dim itemType As String = "Unknown"
 
+            ' === 调试信息输出 ===
+            Debug.WriteLine($"=== UpdateInspectorMailContent 调试开始 ===")
+            Debug.WriteLine($"Inspector窗口激活，时间: {DateTime.Now:HH:mm:ss.fff}")
+            
             ' 安全地读取 EntryID 和 ConversationID，添加多重保护
             Try
                 If TypeOf item Is Outlook.MailItem Then
@@ -1115,12 +1108,72 @@ Public Class ThisAddIn
                 Return
             End If
 
+            ' === 详细调试信息 ===
+            Debug.WriteLine($"邮件类型: {itemType}")
+            Debug.WriteLine($"原始EntryID: {mailEntryID}")
+            Debug.WriteLine($"EntryID长度: {mailEntryID.Length}")
+            Debug.WriteLine($"EntryID格式: {If(mailEntryID.StartsWith("0000"), "长格式", If(mailEntryID.StartsWith("EF"), "短格式", "未知格式"))}")
+            
+            Try
+                Dim shortEntryID As String = OutlookMyList.Utils.OutlookUtils.GetShortEntryID(mailEntryID)
+                Debug.WriteLine($"短格式EntryID: {shortEntryID}")
+            Catch ex As System.Exception
+                Debug.WriteLine($"获取短格式EntryID失败: {ex.Message}")
+            End Try
+            
+            Debug.WriteLine($"ConversationID: {If(String.IsNullOrEmpty(conversationID), "空", If(conversationID.Length > 10, conversationID.Substring(0, 10) & "...", conversationID))}")
+            Debug.WriteLine($"=== 调试信息结束 ===")
+            
             Debug.WriteLine($"UpdateInspectorMailContent: 开始更新，类型: {itemType}, EntryID: {If(mailEntryID.Length > 10, mailEntryID.Substring(0, 10) & "...", mailEntryID)}")
 
             ' Update mail list
             Try
                 inspectorPane.UpdateMailList(conversationID, mailEntryID)
                 Debug.WriteLine($"UpdateInspectorMailContent: 更新完成")
+                
+                ' 增强高亮设置的稳定性，使用多次延迟尝试
+                Dim maxRetries As Integer = 3
+                Dim retryDelay As Integer = 500
+                
+                ' 第一次尝试立即设置高亮
+                Try
+                    If inspectorPane.IsHandleCreated Then
+                        inspectorPane.BeginInvoke(Sub()
+                            inspectorPane.SetCurrentHighlight(mailEntryID)
+                            Debug.WriteLine($"UpdateInspectorMailContent: 高亮设置完成(立即)")
+                        End Sub)
+                    End If
+                Catch ex As System.Exception
+                    Debug.WriteLine($"UpdateInspectorMailContent: 立即高亮设置异常 - {ex.Message}")
+                End Try
+                
+                ' 然后使用多次延迟尝试，确保高亮最终能够设置成功
+                For i As Integer = 1 To maxRetries
+                    Dim retryIndex As Integer = i ' 捕获循环变量
+                    System.Threading.Tasks.Task.Delay(retryDelay * i).ContinueWith(Sub()
+                        Try
+                            ' 确保事件绑定完成
+                            inspectorPane.EnsureEventsBound()
+                            
+                            If inspectorPane.IsHandleCreated Then
+                                inspectorPane.BeginInvoke(Sub()
+                                    inspectorPane.SetCurrentHighlight(mailEntryID)
+                                    Debug.WriteLine($"UpdateInspectorMailContent: 高亮设置完成(延迟尝试 {retryIndex})")
+                                End Sub)
+                            Else
+                                ' 如果句柄未创建，等待HandleCreated事件
+                                AddHandler inspectorPane.HandleCreated, Sub()
+                                    inspectorPane.BeginInvoke(Sub()
+                                        inspectorPane.SetCurrentHighlight(mailEntryID)
+                                        Debug.WriteLine($"UpdateInspectorMailContent: 高亮设置完成(延迟HandleCreated尝试 {retryIndex})")
+                                    End Sub)
+                                End Sub
+                            End If
+                        Catch ex As System.Exception
+                            Debug.WriteLine($"UpdateInspectorMailContent: 高亮设置异常(尝试 {retryIndex}) - {ex.Message}")
+                        End Try
+                    End Sub)
+                Next
             Catch updateEx As System.Exception
                 Debug.WriteLine($"UpdateInspectorMailContent: 更新邮件列表失败 - {updateEx.Message}")
                 ' 不抛出异常，避免弹窗
@@ -1156,6 +1209,7 @@ Public Class ThisAddIn
             themeMonitorTimer = New System.Timers.Timer(2000)
             themeMonitorTimer.AutoReset = True
             themeMonitorTimer.Enabled = True
+            AddHandler themeMonitorTimer.Elapsed, AddressOf ThemeMonitorTimer_Elapsed
             Debug.WriteLine("主题监听器已启动")
         Catch ex As Exception
             Debug.WriteLine($"初始化主题监听器失败: {ex.Message}")
@@ -1166,11 +1220,56 @@ Public Class ThisAddIn
     Private Sub ThemeMonitorTimer_Elapsed(sender As Object, e As ElapsedEventArgs) Handles themeMonitorTimer.Elapsed
         Try
             ' 在UI线程上执行主题检查
-            If mailThreadPane IsNot Nothing Then
-                mailThreadPane.BeginInvoke(Sub() GetCurrentOutlookTheme())
+            If mailThreadPane IsNot Nothing AndAlso mailThreadPane.IsHandleCreated Then
+                mailThreadPane.BeginInvoke(Sub() 
+                    Try
+                        Debug.WriteLine("[ThemeMonitorTimer] 定时器触发主题检查")
+                        GetCurrentOutlookTheme()
+                        ' 强制刷新所有控件的主题
+                        RefreshTheme()
+                        Debug.WriteLine("[ThemeMonitorTimer] 主题检查完成")
+                    Catch ex As Exception
+                        Debug.WriteLine($"[ThemeMonitorTimer] 主题监听器刷新失败: {ex.Message}")
+                    End Try
+                End Sub)
+            ElseIf Application.ActiveExplorer() IsNot Nothing Then
+                ' 使用ActiveExplorer的窗口句柄在UI线程执行
+                Dim explorer = Application.ActiveExplorer()
+                If explorer IsNot Nothing Then
+                    explorer.BeginInvoke(Sub()
+                        Try
+                            Debug.WriteLine("[ThemeMonitorTimer] 通过Explorer定时器触发主题检查")
+                            GetCurrentOutlookTheme()
+                            RefreshTheme()
+                            Debug.WriteLine("[ThemeMonitorTimer] Explorer主题检查完成")
+                        Catch ex As Exception
+                            Debug.WriteLine($"[ThemeMonitorTimer] Explorer主题检查失败: {ex.Message}")
+                        End Try
+                    End Sub)
+                End If
+            Else
+                ' 如果没有mailThreadPane，直接检查主题但延迟应用
+                System.Threading.Tasks.Task.Run(Sub()
+                    Try
+                        Debug.WriteLine("[ThemeMonitorTimer] 后台线程主题检查")
+                        GetCurrentOutlookTheme()
+                        ' 延迟500ms后刷新主题
+                        System.Threading.Tasks.Task.Delay(500).ContinueWith(Sub()
+                            Try
+                                If mailThreadPane IsNot Nothing AndAlso mailThreadPane.IsHandleCreated Then
+                                    mailThreadPane.BeginInvoke(Sub() RefreshTheme())
+                                End If
+                            Catch ex As Exception
+                                Debug.WriteLine($"[ThemeMonitorTimer] 延迟刷新失败: {ex.Message}")
+                            End Try
+                        End Sub)
+                    Catch ex As Exception
+                        Debug.WriteLine($"[ThemeMonitorTimer] 主题监听器检查失败: {ex.Message}")
+                    End Try
+                End Sub)
             End If
         Catch ex As Exception
-            Debug.WriteLine($"主题监听器检查失败: {ex.Message}")
+            Debug.WriteLine($"[ThemeMonitorTimer] 主题监听器执行失败: {ex.Message}")
         End Try
     End Sub
 
@@ -1257,10 +1356,16 @@ Public Class ThisAddIn
         Try
             ' 只处理颜色相关的系统偏好变化，避免影响其他系统设置
             If e.Category = UserPreferenceCategory.Color Then
-                ' 使用异步调用避免阻塞系统事件处理
+                Debug.WriteLine("检测到系统颜色主题变化，开始更新Outlook主题...")
+                ' 使用异步调用避免阻塞系统事件处理，但立即获取主题
                 System.Threading.Tasks.Task.Run(Sub()
                     Try
+                        ' 强制立即检查主题变化
                         GetCurrentOutlookTheme()
+                        ' 添加短暂延迟后再次检查，确保主题完全应用
+                        System.Threading.Thread.Sleep(100)
+                        GetCurrentOutlookTheme()
+                        Debug.WriteLine("系统主题变化处理完成")
                     Catch ex As Exception
                         Debug.WriteLine($"异步主题更新时出错: {ex.Message}")
                     End Try
@@ -1328,21 +1433,42 @@ Public Class ThisAddIn
                 End Select
             End If
 
-            ' Apply colors to main task pane
+            ' Apply colors to main task pane with forced refresh
             If mailThreadPane IsNot Nothing Then
                 Debug.WriteLine($"[ApplyThemeToControls] 调用 mailThreadPane.ApplyTheme，背景色: {backgroundColor}, 前景色: {foregroundColor}")
                 Debug.WriteLine($"[ApplyThemeToControls] 调用前全局变量值: 背景={MailThreadPane.globalThemeBackgroundColor}, 前景={MailThreadPane.globalThemeForegroundColor}")
                 mailThreadPane.ApplyTheme(backgroundColor, foregroundColor)
+                
+                ' 强制刷新WebBrowser控件
+                Try
+                    If mailThreadPane.mailBrowser IsNot Nothing AndAlso mailThreadPane.mailBrowser.IsHandleCreated Then
+                        mailThreadPane.UpdateWebBrowserTheme(backgroundColor, foregroundColor)
+                        Debug.WriteLine("[ApplyThemeToControls] WebBrowser主题已强制刷新")
+                    End If
+                Catch ex As Exception
+                    Debug.WriteLine($"[ApplyThemeToControls] WebBrowser刷新错误: {ex.Message}")
+                End Try
+                
                 Debug.WriteLine($"[ApplyThemeToControls] 调用后全局变量值: 背景={MailThreadPane.globalThemeBackgroundColor}, 前景={MailThreadPane.globalThemeForegroundColor}")
             Else
                 Debug.WriteLine("[ApplyThemeToControls] 警告: mailThreadPane 为 Nothing")
             End If
 
-            ' Apply colors to all Inspector task panes
+            ' Apply colors to all Inspector task panes with forced refresh
             For Each taskPane In inspectorTaskPanes.Values
                 Dim inspectorPane As MailThreadPane = TryCast(taskPane.Control, MailThreadPane)
                 If inspectorPane IsNot Nothing Then
                     inspectorPane.ApplyTheme(backgroundColor, foregroundColor)
+                    
+                    ' 强制刷新Inspector中的WebBrowser控件
+                    Try
+                        If inspectorPane.mailBrowser IsNot Nothing AndAlso inspectorPane.mailBrowser.IsHandleCreated Then
+                            inspectorPane.UpdateWebBrowserTheme(backgroundColor, foregroundColor)
+                            Debug.WriteLine("[ApplyThemeToControls] Inspector WebBrowser主题已强制刷新")
+                        End If
+                    Catch ex As Exception
+                        Debug.WriteLine($"[ApplyThemeToControls] Inspector WebBrowser刷新错误: {ex.Message}")
+                    End Try
                 End If
             Next
 
@@ -1366,7 +1492,18 @@ Public Class ThisAddIn
     ' 公共方法：强制刷新主题
     Public Sub RefreshTheme()
         Try
+            ' 强制重新获取主题并应用
             GetCurrentOutlookTheme()
+            
+            ' 延迟再次应用主题，确保所有控件都更新
+            System.Threading.Tasks.Task.Delay(500).ContinueWith(Sub(t)
+                Try
+                    GetCurrentOutlookTheme()
+                    Debug.WriteLine("主题强制刷新完成")
+                Catch ex As Exception
+                    Debug.WriteLine($"延迟主题刷新错误: {ex.Message}")
+                End Try
+            End Sub)
         Catch ex As Exception
             Debug.WriteLine($"RefreshTheme error: {ex.Message}")
         End Try

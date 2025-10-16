@@ -15,11 +15,11 @@ Namespace Tests
             Debug.WriteLine("=== 邮件加载修复测试开始 ===")
             
             ' 测试空对象
-            Dim emptyResult As Boolean = OutlookUtils.IsMailItemReady(Nothing)
+            Dim emptyResult As Boolean = OutlookMyList.Utils.OutlookUtils.IsMailItemReady(Nothing)
             Debug.WriteLine($"空对象测试结果: {emptyResult}")
             
             ' 测试无效对象
-            Dim invalidResult As Boolean = OutlookUtils.IsMailItemReady("invalid")
+            Dim invalidResult As Boolean = OutlookMyList.Utils.OutlookUtils.IsMailItemReady("invalid")
             Debug.WriteLine($"无效对象测试结果: {invalidResult}")
             
             Debug.WriteLine("=== 邮件加载修复测试完成 ===")

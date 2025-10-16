@@ -2,6 +2,7 @@ Imports Microsoft.Office.Interop.Outlook
 Imports System.Diagnostics
 Imports System.Windows.Forms
 Imports System.Drawing
+Imports System.Runtime.InteropServices
 
 Namespace OutlookMyList.Handlers
     Public Class TaskHandler
@@ -116,32 +117,45 @@ Namespace OutlookMyList.Handlers
         ''' </summary>
         ''' <param name="mailEntryID">邮件EntryID</param>
         ''' <returns>关联的任务信息，如果没有关联任务则返回Nothing</returns>
-        Public Shared Function GetTaskByMailEntryID(mailEntryID As String) As OutlookMyList.Models.TaskInfo
-            Try
-                If String.IsNullOrEmpty(mailEntryID) Then
-                    Return Nothing
-                End If
+        ' 缓存机制：存储已获取的邮件对象
+    Private Shared ReadOnly mailItemCache As New Dictionary(Of String, MailItem)()
+    Private Shared ReadOnly taskInfoCache As New Dictionary(Of String, OutlookMyList.Models.TaskInfo)()
+    
+    Public Shared Function GetTaskByMailEntryID(mailEntryID As String) As OutlookMyList.Models.TaskInfo
+        Try
+            If String.IsNullOrEmpty(mailEntryID) Then
+                Return Nothing
+            End If
 
-                ' 首先检查邮件是否被标记为任务
-                Dim mailItem As MailItem = GetMailItem(mailEntryID)
-                If mailItem IsNot Nothing Then
-                    Try
-                            If mailItem.IsMarkedAsTask Then
-                            ' 创建基于邮件标记的任务信息
-                            Dim taskInfo As New OutlookMyList.Models.TaskInfo With {
-                                .Subject = mailItem.TaskSubject,
-                                .MailEntryID = mailEntryID,
-                                .RelatedMailSubject = mailItem.Subject,
-                                .DueDate = If(mailItem.TaskDueDate = DateTime.MinValue, Nothing, mailItem.TaskDueDate),
-                                .Status = GetTaskStatusText(mailItem.TaskStatus),
-                                .PercentComplete = mailItem.PercentComplete
-                            }
-                            Return taskInfo
+            ' 检查缓存
+            If taskInfoCache.ContainsKey(mailEntryID) Then
+                Return taskInfoCache(mailEntryID)
+            End If
+
+            ' 首先检查邮件是否被标记为任务
+            Dim mailItem As MailItem = GetMailItem(mailEntryID)
+            If mailItem IsNot Nothing Then
+                Try
+                    If mailItem.IsMarkedAsTask Then
+                        ' 创建基于邮件标记的任务信息
+                        Dim taskInfo As New OutlookMyList.Models.TaskInfo With {
+                            .Subject = mailItem.TaskSubject,
+                            .MailEntryID = mailEntryID,
+                            .RelatedMailSubject = mailItem.Subject,
+                            .DueDate = If(mailItem.TaskDueDate = DateTime.MinValue, Nothing, mailItem.TaskDueDate),
+                            .Status = GetTaskStatusText(mailItem.TaskStatus),
+                            .PercentComplete = mailItem.PercentComplete
+                        }
+                        ' 添加到缓存
+                        If Not taskInfoCache.ContainsKey(mailEntryID) Then
+                            taskInfoCache.Add(mailEntryID, taskInfo)
                         End If
-                    Finally
-                        Runtime.InteropServices.Marshal.ReleaseComObject(mailItem)
-                    End Try
-                End If
+                        Return taskInfo
+                    End If
+                Finally
+                    Runtime.InteropServices.Marshal.ReleaseComObject(mailItem)
+                End Try
+            End If
 
                 ' 然后检查是否有独立的任务项关联到这个邮件
                 Dim outlookApp = Globals.ThisAddIn.Application
@@ -314,79 +328,82 @@ Namespace OutlookMyList.Handlers
 
         Private Shared Sub LoadAnnotatedTasks(taskList As ListView, conversationId As String)
             Try
-                ' 获取会话中的所有邮件
+                ' 获取会话中的所有邮件 - 使用Table对象优化性能
                 Dim outlookApp = Globals.ThisAddIn.Application
                 Dim inbox = outlookApp.Session.GetDefaultFolder(OlDefaultFolders.olFolderInbox)
 
-                ' 只查找当前会话的邮件
-                Dim filter As String = $"[ConversationID] = '{conversationId}'"
-                Dim items = inbox.Items.Restrict(filter)
+                ' 使用Table对象批量获取非计算属性
+                Dim table As Outlook.Table = inbox.GetTable($"[ConversationID] = '{conversationId}'", Outlook.OlTableContents.olUserItems)
+                
+                ' 只获取必要的列
+                table.Columns.Add("EntryID")
+                table.Columns.Add("Subject")
+                
+                Dim mailEntryIDs As New List(Of String)()
+                Dim mailSubjects As New Dictionary(Of String, String)()
+                
+                ' 第一阶段：收集所有邮件的EntryID
+                While Not table.EndOfTable
+                    Dim row As Outlook.Row = table.GetNextRow()
+                    Dim entryID As String = row("EntryID")
+                    Dim subject As String = row("Subject")
+                    
+                    mailEntryIDs.Add(entryID)
+                    mailSubjects(entryID) = subject
+                End While
+                
+                Marshal.ReleaseComObject(table)
+                
+                ' 第二阶段：批量处理标记为任务的邮件
+                For Each entryID As String In mailEntryIDs
+                    Try
+                        Dim mail As MailItem = DirectCast(outlookApp.Session.GetItemFromID(entryID), MailItem)
+                        If mail IsNot Nothing Then
+                            Try
+                                ' 检查是否为任务
+                                If mail.IsMarkedAsTask Then
+                                    Dim storeId As String = Nothing
+                                    Try
+                                        Dim parentFolder = TryCast(mail.Parent, MAPIFolder)
+                                        If parentFolder IsNot Nothing AndAlso parentFolder.Store IsNot Nothing Then
+                                            storeId = parentFolder.Store.StoreID
+                                        End If
+                                    Catch
+                                    End Try
 
-                For Each item As Object In items
-                    If TypeOf item Is MailItem Then
-                        Dim mail As MailItem = DirectCast(item, MailItem)
-                        Try
-                            ' 直接使用 IsMarkedAsTask 属性判断
-                            If mail.IsMarkedAsTask Then
-                                Dim storeId As String = Nothing
-                                Try
-                                    Dim parentFolder = TryCast(mail.Parent, MAPIFolder)
-                                    If parentFolder IsNot Nothing AndAlso parentFolder.Store IsNot Nothing Then
-                                        storeId = parentFolder.Store.StoreID
-                                    End If
-                                Catch
-                                End Try
+                                    Dim taskInfo As New OutlookMyList.Models.TaskInfo With {
+                                        .Subject = mail.TaskSubject,
+                                        .MailEntryID = entryID,
+                                        .RelatedMailSubject = If(mailSubjects.ContainsKey(entryID), mailSubjects(entryID), mail.Subject),
+                                        .DueDate = If(mail.TaskDueDate = DateTime.MinValue, Nothing, mail.TaskDueDate),
+                                        .Status = GetTaskStatusText(mail.TaskStatus),
+                                        .PercentComplete = mail.PercentComplete,
+                                        .StoreID = storeId
+                                    }
 
-                                Dim taskInfo As New OutlookMyList.Models.TaskInfo With {
-                                    .Subject = mail.TaskSubject,
-                                    .MailEntryID = mail.EntryID,
-                                    .RelatedMailSubject = mail.Subject,
-                                    .DueDate = If(mail.TaskDueDate = DateTime.MinValue, Nothing, mail.TaskDueDate),
-                                    .Status = GetTaskStatusText(mail.TaskStatus),
-                                    .PercentComplete = mail.PercentComplete,
-                                    .StoreID = storeId
-                                }
-
-                                Dim listItem As New ListViewItem(taskInfo.Subject)
-                                listItem.SubItems.Add(If(taskInfo.DueDate.HasValue, taskInfo.DueDate.Value.ToString("yyyy-MM-dd"), ""))
-                                listItem.SubItems.Add(taskInfo.Status)
-                                listItem.SubItems.Add($"{taskInfo.PercentComplete}%")
-                                listItem.SubItems.Add(taskInfo.RelatedMailSubject)
-                                listItem.Tag = taskInfo
-                                
-                                ' 应用默认主题
-                                ApplyThemeToListViewItem(listItem, SystemColors.Window, SystemColors.WindowText)
-                                
-                                taskList.Items.Add(listItem)
-                            End If
-                        Catch ex As System.Runtime.InteropServices.COMException
-                            Debug.WriteLine($"COM异常访问邮件任务属性 (HRESULT: {ex.HResult:X8}): {ex.Message}")
-                            Dim listItem As New ListViewItem("无法访问任务")
-                            listItem.SubItems.Add("无法访问")
-                            listItem.SubItems.Add("无法访问")
-                            listItem.SubItems.Add("无法访问")
-                            listItem.SubItems.Add("无法访问")
-                            listItem.Tag = Nothing
-                            
-                            ' 应用默认主题
-                            ApplyThemeToListViewItem(listItem, SystemColors.Window, SystemColors.WindowText)
-                            
-                            taskList.Items.Add(listItem)
-                        Catch ex As System.Exception
-                            Debug.WriteLine($"访问邮件任务属性时发生异常: {ex.Message}")
-                            Dim listItem As New ListViewItem("无法访问任务")
-                            listItem.SubItems.Add("无法访问")
-                            listItem.SubItems.Add("无法访问")
-                            listItem.SubItems.Add("无法访问")
-                            listItem.SubItems.Add("无法访问")
-                            listItem.Tag = Nothing
-                            
-                            ' 应用默认主题
-                            ApplyThemeToListViewItem(listItem, SystemColors.Window, SystemColors.WindowText)
-                            
-                            taskList.Items.Add(listItem)
-                        End Try
-                    End If
+                                    Dim listItem As New ListViewItem(taskInfo.Subject)
+                                    listItem.SubItems.Add(If(taskInfo.DueDate.HasValue, taskInfo.DueDate.Value.ToString("yyyy-MM-dd"), ""))
+                                    listItem.SubItems.Add(taskInfo.Status)
+                                    listItem.SubItems.Add($"{taskInfo.PercentComplete}%")
+                                    listItem.SubItems.Add(taskInfo.RelatedMailSubject)
+                                    listItem.Tag = taskInfo
+                                    
+                                    ' 应用默认主题
+                                    ApplyThemeToListViewItem(listItem, SystemColors.Window, SystemColors.WindowText)
+                                    
+                                    taskList.Items.Add(listItem)
+                                End If
+                            Finally
+                                Marshal.ReleaseComObject(mail)
+                            End Try
+                        End If
+                    Catch ex As System.Runtime.InteropServices.COMException
+                        Debug.WriteLine($"COM异常访问邮件任务属性 (HRESULT: {ex.HResult:X8}): {ex.Message}")
+                        Continue For
+                    Catch ex As System.Exception
+                        Debug.WriteLine($"访问邮件任务属性时发生异常: {ex.Message}")
+                        Continue For
+                    End Try
                 Next
             Catch ex As System.Exception
                 Debug.WriteLine($"LoadAnnotatedTasks error: {ex.Message}")
