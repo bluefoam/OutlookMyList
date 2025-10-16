@@ -52,6 +52,7 @@ Public Class ThisAddIn
     ' Inspector错误显示控制变量
     Private hasShownInspectorCOMError As Boolean = False
     Private hasShownInspectorError As Boolean = False
+    Friend Shared hasShownMailOpenError As Boolean = False
     
     ' 错误提醒配置
     Public Shared ReadOnly Property ErrorSettings As ErrorNotificationSettings
@@ -70,8 +71,8 @@ Public Class ThisAddIn
             End If
             
             If ErrorSettings.ShowOnlyFirstError Then
-                If Not HasShownMailOpenError Then
-                    HasShownMailOpenError = True
+                If Not hasShownMailOpenError Then
+                    hasShownMailOpenError = True
                     MessageBox.Show($"{title}：{message}，后续类似错误将被静默处理。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
                 End If
             Else
@@ -729,14 +730,34 @@ Public Class ThisAddIn
             ' 检查Inspector是否包含MailItem
             Dim mailItem As Object = inspector.CurrentItem
 
+            ' 生成Inspector唯一标识
+            Dim inspectorId As String = inspector.Caption & "|" & inspector.GetHashCode().ToString()
+
+            ' 检查是否已存在该Inspector的任务窗格，避免重复创建
+            If inspectorTaskPanes.ContainsKey(inspectorId) Then
+                Dim existingPane = inspectorTaskPanes(inspectorId)
+                If existingPane IsNot Nothing Then
+                    existingPane.Visible = True
+                    Return
+                End If
+            End If
+
+            ' 检查是否已存在同名任务窗格（针对该Inspector）
+            For Each pane As Microsoft.Office.Tools.CustomTaskPane In Me.CustomTaskPanes
+                If pane.Title = "相关邮件v1.1" AndAlso pane.Window IsNot Nothing AndAlso pane.Window.Equals(inspector) Then
+                    inspectorTaskPanes(inspectorId) = pane
+                    pane.Visible = True
+                    Return
+                End If
+            Next
+
             ' 为Inspector创建任务窗格
             Dim inspectorPane As New MailThreadPane()
             Dim inspectorTaskPane As Microsoft.Office.Tools.CustomTaskPane = Me.CustomTaskPanes.Add(inspectorPane, "相关邮件v1.1", inspector)
             inspectorTaskPane.Width = 400
             inspectorTaskPane.Visible = True
 
-            ' 为该Inspector生成唯一标识并存储其任务窗格
-            Dim inspectorId As String = inspector.Caption & "|" & inspector.GetHashCode().ToString()
+            ' 存储该Inspector的任务窗格
             inspectorTaskPanes(inspectorId) = inspectorTaskPane
 
             ' Add Inspector close event handler
@@ -1606,7 +1627,7 @@ Public Class ThisAddIn
         ' 重置所有错误显示标志，确保启动时不会重复显示错误
         hasShownInspectorCOMError = False
         hasShownInspectorError = False
-        HasShownMailOpenError = False
+        hasShownMailOpenError = False
 
         ' 注册全局异常处理，避免未处理异常弹窗，并记录日志
         AddHandler AppDomain.CurrentDomain.UnhandledException, AddressOf GlobalUnhandledExceptionHandler
@@ -1768,6 +1789,26 @@ Public Class ThisAddIn
     End Sub
 
     Private Sub InitializeMailPane()
+        ' 检查是否已存在任务窗格，避免重复创建
+        If customTaskPane IsNot Nothing Then
+            ' 如果已存在，确保可见性并返回
+            customTaskPane.Visible = True
+            Return
+        End If
+        
+        ' 检查是否已存在同名任务窗格
+        For Each pane As Microsoft.Office.Tools.CustomTaskPane In Me.CustomTaskPanes
+            If pane.Title = "相关邮件v1.1" Then
+                customTaskPane = pane
+                customTaskPane.Visible = True
+                mailThreadPane = TryCast(customTaskPane.Control, MailThreadPane)
+                If mailThreadPane IsNot Nothing Then
+                    ApplyThemeToControls()
+                End If
+                Return
+            End If
+        Next
+        
         mailThreadPane = New MailThreadPane()
         customTaskPane = Me.CustomTaskPanes.Add(mailThreadPane, "相关邮件v1.1")
         customTaskPane.Width = 400
