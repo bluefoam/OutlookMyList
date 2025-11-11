@@ -50,8 +50,9 @@ Public Class ThisAddIn
     Public Property CacheEnabled As Boolean = True
     
     ' Inspector错误显示控制变量
-    Private hasShownInspectorCOMError As Boolean = False
-    Private hasShownInspectorError As Boolean = False
+    Private Shared hasShownInspectorCOMError As Boolean = False
+    Private Shared hasShownInspectorError As Boolean = False
+    Private Shared hasShownMailOpenError As Boolean = False
     
     ' 错误提醒配置
     Public Shared ReadOnly Property ErrorSettings As ErrorNotificationSettings
@@ -70,8 +71,8 @@ Public Class ThisAddIn
             End If
             
             If ErrorSettings.ShowOnlyFirstError Then
-                If Not HasShownMailOpenError Then
-                    HasShownMailOpenError = True
+                If Not hasShownMailOpenError Then
+                    hasShownMailOpenError = True
                     MessageBox.Show($"{title}：{message}，后续类似错误将被静默处理。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
                 End If
             Else
@@ -81,6 +82,13 @@ Public Class ThisAddIn
             ' 防止错误显示本身出错
             Debug.WriteLine($"显示错误对话框时出错: {ex.Message}")
         End Try
+    End Sub
+    
+    ' 重置错误标志的方法
+    Public Shared Sub ResetErrorFlags()
+        hasShownMailOpenError = False
+        hasShownInspectorCOMError = False
+        hasShownInspectorError = False
     End Sub
     
     ' 添加CommandBar相关变量
@@ -738,6 +746,20 @@ Public Class ThisAddIn
             ' 为该Inspector生成唯一标识并存储其任务窗格
             Dim inspectorId As String = inspector.Caption & "|" & inspector.GetHashCode().ToString()
             inspectorTaskPanes(inspectorId) = inspectorTaskPane
+
+            ' 立即应用当前主题到新创建的 Inspector 面板，确保深色主题下背景正确
+            Try
+                Dim themeColors = GetCurrentThemeColors()
+                Dim backgroundColor As Color = themeColors.Item1
+                Dim foregroundColor As Color = themeColors.Item2
+                inspectorPane.ApplyTheme(backgroundColor, foregroundColor)
+                ' 强制刷新 Inspector 中的 WebBrowser 主题
+                If inspectorPane.mailBrowser IsNot Nothing AndAlso inspectorPane.mailBrowser.IsHandleCreated Then
+                    inspectorPane.UpdateWebBrowserTheme(backgroundColor, foregroundColor)
+                End If
+            Catch ex As System.Exception
+                Debug.WriteLine($"Inspector 主题应用异常: {ex.Message}")
+            End Try
 
             ' Add Inspector close event handler
             AddHandler CType(inspector, Outlook.InspectorEvents_Event).Close, Sub() InspectorClose(inspectorId)
@@ -1606,7 +1628,7 @@ Public Class ThisAddIn
         ' 重置所有错误显示标志，确保启动时不会重复显示错误
         hasShownInspectorCOMError = False
         hasShownInspectorError = False
-        HasShownMailOpenError = False
+        hasShownMailOpenError = False
 
         ' 注册全局异常处理，避免未处理异常弹窗，并记录日志
         AddHandler AppDomain.CurrentDomain.UnhandledException, AddressOf GlobalUnhandledExceptionHandler
@@ -1819,8 +1841,8 @@ Public Class ThisAddIn
 
     Public Sub ToggleTaskPane()
         Try
-            If bottomPaneTaskPane IsNot Nothing Then
-                bottomPaneTaskPane.Visible = Not bottomPaneTaskPane.Visible
+            If customTaskPane IsNot Nothing Then
+                customTaskPane.Visible = Not customTaskPane.Visible
             End If
         Catch ex As System.Exception
              LogException(ex, "ToggleTaskPane")

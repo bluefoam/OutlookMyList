@@ -243,9 +243,12 @@ Public Class MailThreadPane
                 pendingMailList.BackColor = backgroundColor
                 pendingMailList.ForeColor = foregroundColor
                 pendingMailList.Refresh()
+                Debug.WriteLine("pendingMailList主题已应用")
+            Else
+                Debug.WriteLine("pendingMailList尚未创建，主题将在创建后应用")
+                needsThemeApplication = True
             End If
 
-<<<<<<< HEAD
             ' 应用到来往邮件TreeView - 添加空值检查防止NullReferenceException
             If tabControl IsNot Nothing AndAlso tabControl.TabPages.ContainsKey("来往邮件") Then
                 Dim mailInteractionTabPage As TabPage = tabControl.TabPages("来往邮件")
@@ -274,10 +277,7 @@ Public Class MailThreadPane
                 Debug.WriteLine("contactInfoTree主题已应用")
             End If
 
-            ' 应用到分隔控件 - 按正确顺序设置颜色以确保分割条颜色正确显示
-=======
             ' 应用到分隔控件 - 保持分割条的视觉界限效果
->>>>>>> 675435e (提交当前真题目录)
             If splitter1 IsNot Nothing Then
                 ' 设置面板为主题颜色
                 splitter1.Panel1.BackColor = backgroundColor
@@ -851,16 +851,10 @@ Public Class MailThreadPane
             .Dock = DockStyle.Fill,
             .Orientation = Orientation.Horizontal,
             .Panel1MinSize = 100,
-<<<<<<< HEAD
             .Panel2MinSize = 30,  ' 减小最小尺寸让侧边栏更窄
-            .SplitterWidth = 5,
-            .BackColor = currentBackColor  ' 设置分割条颜色
-=======
-            .Panel2MinSize = 50,
             .SplitterWidth = 2,
             .BackColor = currentBackColor, 'Color.FromArgb(70, 70, 70),  ' 深灰色分割条增强视觉界限
             .BorderStyle = BorderStyle.FixedSingle    ' 添加边框增强界限
->>>>>>> 675435e (提交当前真题目录)
         }
         ' 明确设置面板颜色以避免继承分割条颜色
         splitter2.Panel1.BackColor = currentBackColor

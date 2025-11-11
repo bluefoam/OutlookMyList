@@ -152,7 +152,7 @@ Public Class ErrorNotificationSettingsForm
             settings.SaveSettings()
             
             ' 重置全局错误标志，让新设置生效
-            ThisAddIn.HasShownMailOpenError = False
+            ThisAddIn.ResetErrorFlags()
             
             MessageBox.Show("设置已保存。部分设置可能需要重启Outlook后才能完全生效。", 
                           "设置保存成功", MessageBoxButtons.OK, MessageBoxIcon.Information)
