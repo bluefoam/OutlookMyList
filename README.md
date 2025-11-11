@@ -1,4 +1,4 @@
-# OA-MyList - Outlook 相关邮件插件
+# OutlookMyList - Outlook 相关邮件插件
 
 一个功能强大的 Microsoft Outlook 插件，用于显示和管理与当前选中邮件相关的邮件线程，提供高效的邮件会话浏览和任务管理功能。
 
@@ -158,7 +158,7 @@ Copyright © 2025. 保留所有权利。
 ## 📞 支持
 
 如有问题或建议，请通过以下方式联系：
-- 创建 GitHub Issue
+- 创建 GitHub Issue: https://github.com/bluefoam/OutlookMyList/issues
 - 发送邮件至项目维护者
 
 ---
