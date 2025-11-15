@@ -9129,8 +9129,8 @@ UpdateUI:
 
     Private Sub CustomMailHistory_Click(sender As Object, e As EventArgs)
         Dim email As String = ""
-        If Not PromptEmailAddress(email) Then Exit Sub
-        Dim senderName As String = email
+        Dim senderName As String = ""
+        If Not PromptEmailAddress(email, senderName) Then Exit Sub
         Try
             Dim foundMailInteractionTab As Boolean = False
             For Each tabPage As TabPage In tabControl.TabPages
@@ -9163,8 +9163,8 @@ UpdateUI:
 
     Private Sub CustomPendingMails_Click(sender As Object, e As EventArgs)
         Dim email As String = ""
-        If Not PromptEmailAddress(email) Then Exit Sub
-        Dim senderName As String = email
+        Dim senderName As String = ""
+        If Not PromptEmailAddress(email, senderName) Then Exit Sub
         Try
             Dim foundTab As Boolean = False
             If tabControl IsNot Nothing Then
@@ -9221,7 +9221,7 @@ UpdateUI:
         Return taskMails
     End Function
 
-    Private Function PromptEmailAddress(ByRef email As String) As Boolean
+    Private Function PromptEmailAddress(ByRef email As String, ByRef displayName As String) As Boolean
         Dim input As String = ""
         While True
             Dim f As New Form()
@@ -9263,7 +9263,8 @@ UpdateUI:
             End If
             f.Dispose()
             If IsValidEmail(input) Then
-                email = input
+                email = ExtractEmailAddress(input)
+                displayName = ExtractDisplayName(input)
                 Return True
             Else
                 MessageBox.Show("请输入有效的邮件地址", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning)
@@ -9274,12 +9275,50 @@ UpdateUI:
 
     Private Function IsValidEmail(addr As String) As Boolean
         If String.IsNullOrWhiteSpace(addr) Then Return False
+        Dim pure As String = ExtractEmailAddress(addr)
+        If String.IsNullOrWhiteSpace(pure) Then Return False
         Try
-            Dim m = New System.Net.Mail.MailAddress(addr)
-            Return String.Equals(m.Address, addr, StringComparison.OrdinalIgnoreCase)
-        Catch
+            Dim m = New System.Net.Mail.MailAddress(pure)
+            Return String.Equals(m.Address, pure, StringComparison.OrdinalIgnoreCase)
+        Catch ex As System.Exception
             Return False
         End Try
+    End Function
+
+    Private Function ExtractEmailAddress(text As String) As String
+        If String.IsNullOrWhiteSpace(text) Then Return String.Empty
+        Dim t As String = text.Trim()
+        Dim lt As Integer = t.IndexOf("<"c)
+        Dim gt As Integer = t.LastIndexOf(">"c)
+        If lt >= 0 AndAlso gt > lt Then
+            Dim inner As String = t.Substring(lt + 1, gt - lt - 1).Trim()
+            Return inner
+        End If
+        Try
+            Dim m = New System.Net.Mail.MailAddress(t)
+            Return m.Address
+        Catch ex As System.Exception
+            Return String.Empty
+        End Try
+    End Function
+
+    Private Function ExtractDisplayName(text As String) As String
+        If String.IsNullOrWhiteSpace(text) Then Return String.Empty
+        Dim t As String = text.Trim()
+        Dim lt As Integer = t.IndexOf("<"c)
+        If lt > 0 Then
+            Dim namePart As String = t.Substring(0, lt).Trim()
+            If namePart.StartsWith(""""c) AndAlso namePart.EndsWith(""""c) Then
+                namePart = namePart.Substring(1, namePart.Length - 2)
+            End If
+            If Not String.IsNullOrWhiteSpace(namePart) Then Return namePart
+        End If
+        Try
+            Dim m = New System.Net.Mail.MailAddress(t)
+            If Not String.IsNullOrWhiteSpace(m.DisplayName) Then Return m.DisplayName.Trim()
+        Catch ex As System.Exception
+        End Try
+        Return t
     End Function
 
     Private Sub PendingMailsAsync()
