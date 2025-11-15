@@ -1,4 +1,4 @@
-Imports System.Windows.Forms
+﻿Imports System.Windows.Forms
 Imports System.Drawing
 Imports System.Diagnostics
 Imports System.Net.Http
@@ -459,6 +459,12 @@ Public Class MailThreadPane
     ' 更新WebBrowser的主题
     Public Sub UpdateWebBrowserTheme(backgroundColor As Color, foregroundColor As Color)
         Try
+            currentBackColor = backgroundColor
+            currentForeColor = foregroundColor
+            Dim backHexLog As String = $"#{currentBackColor.R:X2}{currentBackColor.G:X2}{currentBackColor.B:X2}"
+            Dim foreHexLog As String = $"#{currentForeColor.R:X2}{currentForeColor.G:X2}{currentForeColor.B:X2}"
+            Debug.WriteLine($"[ThemeDebug] UpdateWebBrowserTheme: back={backHexLog}, fore={foreHexLog}")
+            Debug.WriteLine($"[ThemeDebug] UpdateWebBrowserTheme: readyState={If(mailBrowser Is Nothing, "<null>", mailBrowser.ReadyState.ToString())}, documentIsNull={If(mailBrowser Is Nothing OrElse mailBrowser.Document Is Nothing, True, False)}, isDisplayingMailContent={isDisplayingMailContent}")
             If mailBrowser IsNot Nothing AndAlso mailBrowser.IsHandleCreated Then
                 ' 构建CSS样式
                 Dim bgColorHex As String = $"#{backgroundColor.R:X2}{backgroundColor.G:X2}{backgroundColor.B:X2}"
@@ -587,8 +593,42 @@ Public Class MailThreadPane
                     Debug.WriteLine("UpdateWebBrowserTheme: 更新默认内容主题")
                     mailBrowser.DocumentText = GetThemedDefaultContent()
                 ElseIf isDisplayingMailContent AndAlso Not String.IsNullOrEmpty(mailBrowser.DocumentText) Then
-                    Debug.WriteLine("UpdateWebBrowserTheme: 当前正在显示邮件内容，跳过主题更新以避免干扰")
-                    ' 当正在显示邮件内容时，不进行主题更新，因为MailHandler.DisplayMailContent已经包含了正确的主题样式
+                    Debug.WriteLine("UpdateWebBrowserTheme: 当前正在显示邮件内容，强制应用主题色")
+                    ' 即使正在显示邮件内容，也要确保WebBrowser控件本身的主题色正确
+                    Try
+                        mailBrowser.BackColor = backgroundColor
+
+                        ' 如果文档已加载，尝试注入主题样式
+                        Dim doc = mailBrowser.Document
+                        If doc IsNot Nothing Then
+                            bgColorHex = $"#{backgroundColor.R:X2}{backgroundColor.G:X2}{backgroundColor.B:X2}"
+                            fgColorHex = $"#{foregroundColor.R:X2}{foregroundColor.G:X2}{foregroundColor.B:X2}"
+
+                            ' 使用JavaScript强制应用样式到整个文档
+                            Dim jsScript As String = $"
+                                (function() {{
+                                    try {{
+                                        document.body.style.setProperty('background-color', '#{backgroundColor.R:X2}{backgroundColor.G:X2}{backgroundColor.B:X2}', 'important');
+                                        document.body.style.setProperty('color', '#{foregroundColor.R:X2}{foregroundColor.G:X2}{foregroundColor.B:X2}', 'important');
+                                        document.documentElement.style.setProperty('background-color', '#{backgroundColor.R:X2}{backgroundColor.G:X2}{backgroundColor.B:X2}', 'important');
+                                    }} catch(e) {{}}
+                                }})();
+                            "
+
+                            Try
+                                doc.InvokeScript("eval", New Object() {jsScript})
+                                Debug.WriteLine($"UpdateWebBrowserTheme: 已强制应用主题色到当前文档")
+                                Dim bgComputed As Object = doc.InvokeScript("eval", New Object() {"(function(){try{var el=document.body;if(!el) return 'no-body';var c=(window.getComputedStyle?window.getComputedStyle(el):el.currentStyle);var val=(c? (c.backgroundColor||'') : ''); if(!val||val==='transparent'){val=(el.style?el.style.backgroundColor:'')||val;} return val||'';}catch(e){return 'err:'+e.message;}})();"})
+                                Dim textLen As Object = doc.InvokeScript("eval", New Object() {"(function(){try{var b=document.body;return b&&b.innerText?b.innerText.length:0;}catch(e){return -1;}})();"})
+                                Debug.WriteLine($"[ThemeDebug] UpdateWebBrowserTheme: computedBodyBg={If(bgComputed, Nothing)}, innerTextLen={If(textLen, Nothing)}")
+                            Catch scriptEx As Exception
+                                Debug.WriteLine($"UpdateWebBrowserTheme: 应用脚本失败: {scriptEx.Message}")
+                            End Try
+                        End If
+                    Catch ex As Exception
+                        Debug.WriteLine($"UpdateWebBrowserTheme: 应用主题色时出错: {ex.Message}")
+                    End Try
+                    ' ThemeMonitor 定时器暂时移除
                 End If
             End If
         Catch ex As System.Exception
@@ -839,7 +879,7 @@ Public Class MailThreadPane
             .Panel1MinSize = 100,
             .Panel2MinSize = 150,
             .SplitterWidth = 2,
-            .BackColor = currentBackColor, ’Color.FromArgb(70, 70, 70),  ' 深灰色分割条增强视觉界限
+            .BackColor = currentBackColor, 'Color.FromArgb(70, 70, 70),  ' 深灰色分割条增强视觉界限
             .BorderStyle = BorderStyle.FixedSingle    ' 添加边框增强界限
         }
         ' 明确设置面板颜色以避免继承分割条颜色
@@ -1222,11 +1262,11 @@ Public Class MailThreadPane
         With lvMails.Columns.Add("----", 50)  ' 增加宽度以适应更大的图标
             '.BackColor = Color.Transparent
         End With
-        
+
         With lvMails.Columns.Add("日期", 120) ' 宽度适配“yyyy-MM-dd HH:mm”
             '.BackColor = Color.Transparent
         End With
-        
+
         With lvMails.Columns.Add("发件人", 100)
             .TextAlign = HorizontalAlignment.Left
             '.BackColor = Color.Transparent
@@ -1387,8 +1427,20 @@ Public Class MailThreadPane
         AddHandler pendingMailsItem.Click, AddressOf PendingMails_Click
         mailContextMenu.Items.Add(pendingMailsItem)
 
-        ' 添加菜单打开事件处理程序，动态更新菜单项文本
+        mailContextMenu.Items.Add(New ToolStripSeparator())
+
+        Dim customHistoryItem As New ToolStripMenuItem("自定义来往邮件")
+        AddHandler customHistoryItem.Click, AddressOf CustomMailHistory_Click
+        mailContextMenu.Items.Add(customHistoryItem)
+
+        Dim customPendingItem As New ToolStripMenuItem("自定义待办邮件")
+        AddHandler customPendingItem.Click, AddressOf CustomPendingMails_Click
+        mailContextMenu.Items.Add(customPendingItem)
+
         AddHandler mailContextMenu.Opening, AddressOf MailContextMenu_Opening
+        mailContextMenu.AutoClose = True
+        AddHandler Me.MouseDown, AddressOf HideContextMenuOnMouseDown
+        AddHandler lvMails.MouseDown, AddressOf HideContextMenuOnMouseDown
 
         ' 将右键菜单绑定到ListView
         lvMails.ContextMenuStrip = mailContextMenu
@@ -2491,7 +2543,7 @@ Public Class MailThreadPane
             If ThisAddIn.ErrorSettings.LogErrorsToDebug Then
                 Debug.WriteLine($"OpenOutlookMail COM异常 (HRESULT: {ex.HResult:X8}): {ex.Message}")
             End If
-            
+
             ' 统一COM错误处理
             Globals.ThisAddIn.ShowErrorWithConfig("无法打开邮件，可能已被删除或移动", ex.Message)
         Catch ex As System.Exception
@@ -2499,7 +2551,7 @@ Public Class MailThreadPane
             If ErrorNotificationSettings.Instance.LogErrorsToDebug Then
                 Debug.WriteLine($"OpenOutlookMail 异常: {ex.Message}")
             End If
-            
+
             ' 根据配置决定是否显示错误
             If ErrorNotificationSettings.Instance.ShowErrorDialogs Then
                 ' 统一错误处理
@@ -3772,7 +3824,7 @@ Public Class MailThreadPane
                 If ThisAddIn.ErrorSettings.LogErrorsToDebug Then
                     Debug.WriteLine("OpenInOutlook_Click: 所选节点不是邮件节点")
                 End If
-                
+
                 ' 根据配置决定是否显示错误提示
                 If ThisAddIn.ErrorSettings.ShowErrorDialogs Then
                     MessageBox.Show("所选节点不是邮件节点", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning)
@@ -3997,14 +4049,14 @@ Public Class MailThreadPane
                 Debug.WriteLine("SetCustomConversationIdByEntryID: entryID为空，返回False")
                 Return False
             End If
-            
+
             ' 注意：允许convId为空字符串，这表示要清除自定义会话ID
             ' 只有当convId为Nothing时才返回False
             If convId Is Nothing Then
                 Debug.WriteLine("SetCustomConversationIdByEntryID: convId为Nothing，返回False")
                 Return False
             End If
-            
+
             Dim item = OutlookMyList.Utils.OutlookUtils.SafeGetItemFromID(entryID, storeId)
             If item Is Nothing Then
                 Debug.WriteLine("SetCustomConversationIdByEntryID: 无法获取邮件项目，返回False")
@@ -4028,7 +4080,7 @@ Public Class MailThreadPane
                 Debug.WriteLine($"SetCustomConversationIdByEntryID: 获取UserProperties时出错: {ex.Message}")
                 Return False
             End Try
-            
+
             If userProps Is Nothing Then
                 Debug.WriteLine("SetCustomConversationIdByEntryID: 无法获取UserProperties，返回False")
                 Return False
@@ -4037,7 +4089,7 @@ Public Class MailThreadPane
             Dim prop As Outlook.UserProperty = Nothing
             Try
                 prop = userProps.Find(CustomConversationPropertyName)
-                
+
                 ' 如果convId为空字符串，表示要清除自定义会话ID
                 If String.IsNullOrEmpty(convId) Then
                     If prop IsNot Nothing Then
@@ -4073,12 +4125,12 @@ Public Class MailThreadPane
 
                 ' 强制保存属性
                 prop.Value = convId
-                
+
                 ' 保存邮件项
                 If TypeOf item Is Outlook.MailItem Then
                     Dim mailItem = DirectCast(item, Outlook.MailItem)
                     mailItem.Save()
-                    
+
                     ' 验证保存是否成功
                     Dim savedProp = mailItem.UserProperties.Find(CustomConversationPropertyName)
                     If savedProp IsNot Nothing AndAlso savedProp.Value.ToString() = convId Then
@@ -4094,7 +4146,7 @@ Public Class MailThreadPane
                     DirectCast(item, Outlook.MeetingItem).Save()
                     Debug.WriteLine("SetCustomConversationIdByEntryID: MeetingItem已保存")
                 End If
-                
+
                 Debug.WriteLine("SetCustomConversationIdByEntryID: 操作成功完成")
                 Return True
             Catch ex As System.Exception
@@ -4347,11 +4399,8 @@ Public Class MailThreadPane
                         End Try
                     End If
                     ' 本地点击：始终更新当前窗格的 WebView
-                    mailBrowser.DocumentText = displayContent
-                    ' 立即应用当前主题到WebBrowser控件
-                    Dim currentBgColor As Color = ColorTranslator.FromHtml(globalThemeBackgroundColor)
-                    Dim currentFgColor As Color = ColorTranslator.FromHtml(globalThemeForegroundColor)
-                    UpdateWebBrowserTheme(currentBgColor, currentFgColor)
+                    DisplayMailInWebView(entryId)
+                    Return
                     'Else
                     '    Debug.WriteLine("无法获取邮件项或邮件项不是MailItem/AppointmentItem类型。")
                     'End If
@@ -5580,17 +5629,38 @@ Public Class MailThreadPane
         End Try
     End Sub
 
+    Private Sub MailBrowser_Navigated(sender As Object, e As WebBrowserNavigatedEventArgs)
+        Try
+            Dim backHexLog As String = $"#{currentBackColor.R:X2}{currentBackColor.G:X2}{currentBackColor.B:X2}"
+            Dim foreHexLog As String = $"#{currentForeColor.R:X2}{currentForeColor.G:X2}{currentForeColor.B:X2}"
+            Debug.WriteLine($"[ThemeDebug] Navigated: url={If(e.Url, Nothing)}, readyState={mailBrowser.ReadyState}, isDisplayingMailContent={isDisplayingMailContent}, back={backHexLog}, fore={foreHexLog}")
+        Catch ex As System.Exception
+            Debug.WriteLine($"MailBrowser_Navigated error: {ex.Message}")
+        End Try
+    End Sub
+
+    Private Sub MailBrowser_ProgressChanged(sender As Object, e As WebBrowserProgressChangedEventArgs)
+        Try
+            Debug.WriteLine($"[ThemeDebug] ProgressChanged: current={e.CurrentProgress}, maximum={e.MaximumProgress}, readyState={mailBrowser.ReadyState}")
+        Catch ex As System.Exception
+            Debug.WriteLine($"MailBrowser_ProgressChanged error: {ex.Message}")
+        End Try
+    End Sub
+
     ' WebBrowser文档加载完成事件处理
     Private Sub WebBrowser_DocumentCompleted(sender As Object, e As WebBrowserDocumentCompletedEventArgs)
         Try
             Debug.WriteLine($"WebBrowser_DocumentCompleted 触发，isDisplayingMailContent = {isDisplayingMailContent}")
 
-            ' 移除事件处理器避免重复调用
-            RemoveHandler mailBrowser.DocumentCompleted, AddressOf WebBrowser_DocumentCompleted
+            If mailBrowser.ReadyState <> WebBrowserReadyState.Complete Then
+                Debug.WriteLine($"[ThemeDebug] DocumentCompleted: readyState={mailBrowser.ReadyState}")
+                Return
+            End If
 
             ' 只有在显示邮件内容时才应用主题样式
             If isDisplayingMailContent AndAlso mailBrowser.Document IsNot Nothing Then
                 Debug.WriteLine("开始在DocumentCompleted中应用主题样式")
+                Debug.WriteLine($"[ThemeDebug] DocumentCompleted: url={e.Url}")
                 Dim doc = mailBrowser.Document
 
                 ' 使用当前保存的主题颜色
@@ -5600,6 +5670,7 @@ Public Class MailThreadPane
                 Dim bgColorHex As String = $"#{bgColor.R:X2}{bgColor.G:X2}{bgColor.B:X2}"
                 Dim fgColorHex As String = $"#{fgColor.R:X2}{fgColor.G:X2}{fgColor.B:X2}"
                 Dim accentColorHex As String = $"#{accentColor.R:X2}{accentColor.G:X2}{accentColor.B:X2}"
+                Debug.WriteLine($"[ThemeDebug] DocumentCompleted: back={bgColorHex}, fore={fgColorHex}")
 
                 ' 通过JavaScript强制应用样式，彻底覆盖所有可能的颜色设置
                 Dim script As String = $"
@@ -5613,6 +5684,8 @@ Public Class MailThreadPane
                                 // 使用setProperty方法强制覆盖，包括内联样式
                                 elem.style.setProperty('background-color', '{bgColorHex}', 'important');
                                 elem.style.setProperty('color', '{fgColorHex}', 'important');
+                                elem.style.removeProperty('background-image');
+                                elem.style.removeProperty('background');
                                 
                                 // 特殊处理标题和强调元素
                                 if (tagName === 'H1' || tagName === 'H2' || tagName === 'H3' || 
@@ -5635,6 +5708,28 @@ Public Class MailThreadPane
                         // 确保body元素的样式
                         document.body.style.setProperty('background-color', '{bgColorHex}', 'important');
                         document.body.style.setProperty('color', '{fgColorHex}', 'important');
+                        try {{
+                            var iframes = document.getElementsByTagName('iframe');
+                            for (var j = 0; j < iframes.length; j++) {{
+                                var idoc = null; try {{ idoc = iframes[j].contentDocument || (iframes[j].contentWindow && iframes[j].contentWindow.document); }} catch(_) {{}}
+                                if (idoc && idoc.body) {{
+                                    var es = idoc.getElementsByTagName('*');
+                                    for (var k = 0; k < es.length; k++) {{
+                                        var ee = es[k]; var tt = ee.tagName.toUpperCase();
+                                        if (tt !== 'STYLE' && tt !== 'SCRIPT') {{
+                                            ee.style.setProperty('background-color', '{bgColorHex}', 'important');
+                                            ee.style.setProperty('color', '{fgColorHex}', 'important');
+                                            if (tt !== 'BODY') {{ ee.style.setProperty('background-color', 'transparent', 'important'); }}
+                                            ee.style.removeProperty('background-image');
+                                            ee.style.removeProperty('background');
+                                            ee.removeAttribute('color'); ee.removeAttribute('bgcolor');
+                                        }}
+                                    }}
+                                    idoc.body.style.setProperty('background-color', '{bgColorHex}', 'important');
+                                    idoc.body.style.setProperty('color', '{fgColorHex}', 'important');
+                                }}
+                            }}
+                        }} catch(_) {{}}
                         
                         // 处理所有文本节点的父元素
                         var walker = document.createTreeWalker(
@@ -5652,8 +5747,23 @@ Public Class MailThreadPane
                     }})();
                 "
 
-                doc.InvokeScript("eval", New Object() {script})
+                Dim applyResult As Object = doc.InvokeScript("eval", New Object() {script})
                 Debug.WriteLine("DocumentCompleted中主题样式应用完成")
+                If Not IsNothing(applyResult) Then
+                    Debug.WriteLine($"[ThemeDebug] DocumentCompleted: applySummary={applyResult.ToString()}")
+                End If
+                Dim dcBg As Object = doc.InvokeScript("eval", New Object() {"(function(){try{var el=document.body;if(!el) return 'no-body';var c=(window.getComputedStyle?window.getComputedStyle(el):el.currentStyle);var val=(c? (c.backgroundColor||'') : ''); if(!val||val==='transparent'){val=(el.style?el.style.backgroundColor:'')||val;} return val||'';}catch(e){return 'err:'+e.message;}})();"})
+                Dim dcHtmlBg As Object = doc.InvokeScript("eval", New Object() {"(function(){try{var el=document.documentElement;if(!el) return 'no-html';var c=(window.getComputedStyle?window.getComputedStyle(el):el.currentStyle);var val=(c? (c.backgroundColor||'') : ''); if(!val||val==='transparent'){val=(el.style?el.style.backgroundColor:'')||val;} return val||'';}catch(e){return 'err:'+e.message;}})();"})
+                Dim dcTextLen As Object = doc.InvokeScript("eval", New Object() {"(function(){try{var b=document.body;return b&&b.innerText?b.innerText.length:0;}catch(e){return -1;}})();"})
+                Debug.WriteLine($"[ThemeDebug] DocumentCompleted: computedBodyBg={If(dcBg, Nothing)}, htmlBg={If(dcHtmlBg, Nothing)}, innerTextLen={If(dcTextLen, Nothing)}")
+                'Dim computedJs As String = "(function(){try{var s={url:document.location.href,bodyBg:getComputedStyle(document.body).backgroundColor,innerTextLen:(document.body&&document.body.innerText?document.body.innerText.length:0),elements:document.getElementsByTagName('*').length};return JSON.stringify(s);}catch(e){return 'err:'+e.message;}})();"
+                'Dim computed As Object = doc.InvokeScript("eval", New Object() {computedJs})
+                'If computed IsNot Nothing Then
+                '    Debug.WriteLine($"[ThemeDebug] DocumentCompleted: computed={computed.ToString()}")
+                'End If
+                RemoveHandler mailBrowser.Navigated, AddressOf MailBrowser_Navigated
+                RemoveHandler mailBrowser.ProgressChanged, AddressOf MailBrowser_ProgressChanged
+                RemoveHandler mailBrowser.DocumentCompleted, AddressOf WebBrowser_DocumentCompleted
             Else
                 Debug.WriteLine("跳过DocumentCompleted中的主题应用 - 不是邮件内容或Document为空")
             End If
@@ -5750,6 +5860,8 @@ Public Class MailThreadPane
                 ' 自动加载 WebView 内容
                 If Me.IsHandleCreated Then
                     Me.BeginInvoke(Sub() LoadMailContentDeferred(mailEntryID))
+                    Dim currentThemeColors As (backgroundColor As Color, foregroundColor As Color) = GetCurrentThemeColors()
+                    UpdateWebBrowserTheme(currentThemeColors.backgroundColor, currentThemeColors.foregroundColor)
                 End If
 
                 Debug.WriteLine($"处理无会话邮件，耗时: {(DateTime.Now - startTime).TotalMilliseconds}ms")
@@ -7135,6 +7247,8 @@ UpdateUI:
                                    If selectedItem.Tag IsNot Nothing Then
                                        Dim entryID = ConvertEntryIDToString(selectedItem.Tag)
                                        LoadMailContentDeferred(entryID)
+                                       Dim currentThemeColors As (backgroundColor As Color, foregroundColor As Color) = GetCurrentThemeColors()
+                                       UpdateWebBrowserTheme(currentThemeColors.backgroundColor, currentThemeColors.foregroundColor)
                                    End If
                                End If
                            End Try
@@ -8069,8 +8183,9 @@ UpdateUI:
                 Debug.WriteLine($"lvMails_SelectedIndexChanged: suppressWebViewUpdate = {suppressWebViewUpdate}")
                 If suppressWebViewUpdate = 0 Then
                     Debug.WriteLine($"lvMails_SelectedIndexChanged: 开始加载WebView内容，邮件ID = {mailId}")
-                    ' 使用 BeginInvoke 在事件回调结束后加载邮件内容
                     Me.BeginInvoke(New Action(Of String)(AddressOf LoadMailContentDeferred), mailId)
+                    Dim currentThemeColors As (backgroundColor As Color, foregroundColor As Color) = GetCurrentThemeColors()
+                    UpdateWebBrowserTheme(currentThemeColors.backgroundColor, currentThemeColors.foregroundColor)
                 Else
                     Debug.WriteLine($"lvMails_SelectedIndexChanged: WebView更新被抑制，suppressWebViewUpdate = {suppressWebViewUpdate}")
                 End If
@@ -8141,9 +8256,17 @@ UpdateUI:
 
             If mailBrowser IsNot Nothing AndAlso mailBrowser.IsHandleCreated AndAlso suppressWebViewUpdate = 0 Then
                 Debug.WriteLine($"开始更新WebView内容，邮件ID: {mailId}")
+                
+                Debug.WriteLine("准备绑定WebBrowser事件")
+                AddHandler mailBrowser.DocumentCompleted, AddressOf WebBrowser_DocumentCompleted
+                AddHandler mailBrowser.Navigated, AddressOf MailBrowser_Navigated
+                AddHandler mailBrowser.ProgressChanged, AddressOf MailBrowser_ProgressChanged
+                Debug.WriteLine("WebBrowser事件绑定完成")
+
+                Debug.WriteLine($"设置DocumentText，内容长度={If(html IsNot Nothing, html.Length, 0)}")
                 mailBrowser.DocumentText = html
-                isDisplayingMailContent = True ' 标记当前正在显示邮件内容
-                Debug.WriteLine($"WebView内容已设置，邮件ID: {mailId}, isDisplayingMailContent = {isDisplayingMailContent}")
+                isDisplayingMailContent = True
+                Debug.WriteLine($"DocumentText已设置后状态: readyState={mailBrowser.ReadyState}, isDisplayingMailContent={isDisplayingMailContent}")
 
                 ' 验证WebView内容是否真的被设置
                 Dim actualContent = mailBrowser.DocumentText
@@ -8153,8 +8276,58 @@ UpdateUI:
                     Debug.WriteLine($"WebView内容预览: {preview}")
                 End If
 
-                ' 注意：不在这里立即应用主题，而是等待DocumentCompleted事件
-                Debug.WriteLine("等待WebView DocumentCompleted事件来应用主题")
+                Debug.WriteLine("已添加DocumentCompleted事件处理程序，等待应用主题")
+                
+                ' 立即应用主题到WebBrowser控件本身
+                Dim currentThemeColors As (backgroundColor As Color, foregroundColor As Color) = GetCurrentThemeColors()
+                UpdateWebBrowserTheme(currentThemeColors.backgroundColor, currentThemeColors.foregroundColor)
+
+                Dim attempts As Integer = 0
+                Dim themeTimer As New System.Windows.Forms.Timer()
+                themeTimer.Interval = 150
+                AddHandler themeTimer.Tick, Sub(sender2, e2)
+                    Try
+                        attempts += 1
+                        Debug.WriteLine($"[ThemeDebug] TimerTick: attempt={attempts}, readyState={mailBrowser.ReadyState}, docIsNull={mailBrowser.Document Is Nothing}, isDisplayingMailContent={isDisplayingMailContent}")
+                        If mailBrowser.ReadyState = WebBrowserReadyState.Complete AndAlso isDisplayingMailContent AndAlso mailBrowser.Document IsNot Nothing Then
+                            Dim doc = mailBrowser.Document
+                            Dim bgColorHex As String = $"#{currentBackColor.R:X2}{currentBackColor.G:X2}{currentBackColor.B:X2}"
+                            Dim fgColorHex As String = $"#{currentForeColor.R:X2}{currentForeColor.G:X2}{currentForeColor.B:X2}"
+                            Dim accentColorHex As String = "#0078d7"
+                            Dim script As String = $"
+                                (function() {{
+                                    var elements = document.getElementsByTagName('*');
+                                    for (var i = 0; i < elements.length; i++) {{
+                                        var elem = elements[i];
+                                        var tagName = elem.tagName.toUpperCase();
+                                        if (tagName !== 'STYLE' && tagName !== 'SCRIPT') {{
+                                            elem.style.setProperty('background-color', '{bgColorHex}', 'important');
+                                            elem.style.setProperty('color', '{fgColorHex}', 'important');
+                                            if (tagName !== 'BODY') {{
+                                                elem.style.setProperty('background-color', 'transparent', 'important');
+                                            }}
+                                            elem.removeAttribute('color');
+                                            elem.removeAttribute('bgcolor');
+                                        }}
+                                    }}
+                                    document.body.style.setProperty('background-color', '{bgColorHex}', 'important');
+                                    document.body.style.setProperty('color', '{fgColorHex}', 'important');
+                                }})();
+                            "
+                            Debug.WriteLine($"[ThemeDebug] TimerTick: applying theme back={bgColorHex}, fore={fgColorHex}")
+                            Dim applyResult As Object = doc.InvokeScript("eval", New Object() {script})
+                            Debug.WriteLine("[ThemeDebug] TimerTick: theme applied via eval")
+                            themeTimer.Stop()
+                        ElseIf attempts >= 20 Then
+                            Debug.WriteLine("[ThemeDebug] TimerTick: max attempts reached, stop timer")
+                            themeTimer.Stop()
+                        End If
+                    Catch ex As System.Exception
+                        Debug.WriteLine($"[ThemeDebug] TimerTick error: {ex.Message}")
+                        themeTimer.Stop()
+                    End Try
+                End Sub
+                themeTimer.Start()
             Else
                 Debug.WriteLine($"跳过WebView更新 - mailBrowser IsNot Nothing: {mailBrowser IsNot Nothing}, IsHandleCreated: {If(mailBrowser IsNot Nothing, mailBrowser.IsHandleCreated, False)}, suppressWebViewUpdate: {suppressWebViewUpdate}")
             End If
@@ -8926,12 +9099,12 @@ UpdateUI:
                 For Each item As ToolStripItem In contextMenu.Items
                     Dim menuItem As ToolStripMenuItem = TryCast(item, ToolStripMenuItem)
                     If menuItem IsNot Nothing Then
-                        ' 更新待办邮件菜单项
-                        If menuItem.Text.Contains("待办邮件") Then
-                            menuItem.Text = $"{senderName}待办邮件"
-                            ' 更新最近往来邮件菜单项
-                        ElseIf menuItem.Text.Contains("往来邮件") Then
-                            menuItem.Text = $"{senderName}往来邮件"
+                        If Not menuItem.Text.StartsWith("自定义") Then
+                            If menuItem.Text.Contains("待办邮件") Then
+                                menuItem.Text = $"{senderName}待办邮件"
+                            ElseIf menuItem.Text.Contains("往来邮件") Then
+                                menuItem.Text = $"{senderName}往来邮件"
+                            End If
                         End If
                     End If
                 Next
@@ -8942,9 +9115,172 @@ UpdateUI:
     End Sub
 
     Private Sub PendingMails_Click(sender As Object, e As EventArgs)
-        ' 异步执行待办邮件处理逻辑
         Task.Run(Sub() PendingMailsAsync())
     End Sub
+
+    Private Sub HideContextMenuOnMouseDown(sender As Object, e As MouseEventArgs)
+        Try
+            If mailContextMenu IsNot Nothing AndAlso mailContextMenu.Visible Then
+                mailContextMenu.Hide()
+            End If
+        Catch ex As System.Exception
+        End Try
+    End Sub
+
+    Private Sub CustomMailHistory_Click(sender As Object, e As EventArgs)
+        Dim email As String = ""
+        If Not PromptEmailAddress(email) Then Exit Sub
+        Dim senderName As String = email
+        Try
+            Dim foundMailInteractionTab As Boolean = False
+            For Each tabPage As TabPage In tabControl.TabPages
+                If tabPage.Text = "来往邮件" Then
+                    tabControl.SelectedTab = tabPage
+                    foundMailInteractionTab = True
+                    Exit For
+                End If
+            Next
+            Dim mailInteractionTreeView As TreeView = Nothing
+            For Each tabPage As TabPage In tabControl.TabPages
+                If tabPage.Text = "来往邮件" Then
+                    For Each control As Control In tabPage.Controls
+                        Dim treeView As TreeView = FindTreeViewInControl(control)
+                        If Not treeView Is Nothing Then
+                            mailInteractionTreeView = treeView
+                            Exit For
+                        End If
+                    Next
+                    Exit For
+                End If
+            Next
+            If Not mailInteractionTreeView Is Nothing Then
+                contactInfoTree = mailInteractionTreeView
+            End If
+            GetContactInfoTreeHandlerWithSender(senderName, email)
+        Catch ex As System.Exception
+        End Try
+    End Sub
+
+    Private Sub CustomPendingMails_Click(sender As Object, e As EventArgs)
+        Dim email As String = ""
+        If Not PromptEmailAddress(email) Then Exit Sub
+        Dim senderName As String = email
+        Try
+            Dim foundTab As Boolean = False
+            If tabControl IsNot Nothing Then
+                For Each tabPage As TabPage In tabControl.TabPages
+                    If tabPage.Text = "待办邮件" Then
+                        tabControl.SelectedTab = tabPage
+                        foundTab = True
+                        Exit For
+                    End If
+                Next
+            End If
+            If Not foundTab Then Exit Sub
+            ShowPendingMailsForEmail(email, senderName)
+        Catch ex As System.Exception
+        End Try
+    End Sub
+
+    Private Sub ShowPendingMailsForEmail(email As String, senderName As String)
+        Dim pendingMailListView As ListView = GetPendingMailListView()
+        If pendingMailListView Is Nothing Then Exit Sub
+        If Me.InvokeRequired Then
+            Me.Invoke(Sub()
+                          pendingMailListView.Items.Clear()
+                          Dim loadingItem As New ListViewItem("正在收集联系人任务邮件...")
+                          loadingItem.SubItems.Add("")
+                          loadingItem.SubItems.Add("")
+                          pendingMailListView.Items.Add(loadingItem)
+                      End Sub)
+        Else
+            pendingMailListView.Items.Clear()
+            Dim loadingItem As New ListViewItem("正在收集联系人任务邮件...")
+            loadingItem.SubItems.Add("")
+            loadingItem.SubItems.Add("")
+            pendingMailListView.Items.Add(loadingItem)
+        End If
+        Task.Run(Sub()
+                     Dim result = GetTaskMailsForEmail(email, senderName)
+                     If Me.InvokeRequired Then
+                         Me.Invoke(Sub() PopulateContactTaskMails(result))
+                     Else
+                         PopulateContactTaskMails(result)
+                     End If
+                 End Sub)
+    End Sub
+
+    Private Function GetTaskMailsForEmail(email As String, senderName As String) As List(Of Object)
+        Dim taskMails As New List(Of Object)
+        Try
+            Dim outlookApp As Microsoft.Office.Interop.Outlook.Application = Globals.ThisAddIn.Application
+            Dim outlookNameSpace As Microsoft.Office.Interop.Outlook.NameSpace = outlookApp.GetNamespace("MAPI")
+            taskMails = GetTaskMailsUsingTable(outlookApp, outlookNameSpace, email, senderName)
+        Catch ex As System.Exception
+        End Try
+        Return taskMails
+    End Function
+
+    Private Function PromptEmailAddress(ByRef email As String) As Boolean
+        Dim input As String = ""
+        While True
+            Dim f As New Form()
+            Dim tb As New TextBox()
+            Dim lbl As New Label()
+            Dim okBtn As New Button()
+            Dim cancelBtn As New Button()
+            f.Text = "输入邮件地址"
+            f.FormBorderStyle = FormBorderStyle.FixedDialog
+            f.StartPosition = FormStartPosition.CenterParent
+            f.MinimizeBox = False
+            f.MaximizeBox = False
+            f.ClientSize = New Size(360, 140)
+            lbl.Text = "邮件地址："
+            lbl.Location = New Point(16, 20)
+            lbl.Size = New Size(320, 20)
+            tb.Location = New Point(16, 45)
+            tb.Size = New Size(320, 24)
+            okBtn.Text = "确认"
+            okBtn.Location = New Point(170, 90)
+            okBtn.Size = New Size(75, 28)
+            okBtn.DialogResult = DialogResult.OK
+            cancelBtn.Text = "取消"
+            cancelBtn.Location = New Point(260, 90)
+            cancelBtn.Size = New Size(75, 28)
+            cancelBtn.DialogResult = DialogResult.Cancel
+            f.AcceptButton = okBtn
+            f.CancelButton = cancelBtn
+            f.Controls.Add(lbl)
+            f.Controls.Add(tb)
+            f.Controls.Add(okBtn)
+            f.Controls.Add(cancelBtn)
+            Dim dr = f.ShowDialog(Me)
+            If dr = DialogResult.OK Then
+                input = tb.Text.Trim()
+            Else
+                f.Dispose()
+                Return False
+            End If
+            f.Dispose()
+            If IsValidEmail(input) Then
+                email = input
+                Return True
+            Else
+                MessageBox.Show("请输入有效的邮件地址", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            End If
+        End While
+        Return False
+    End Function
+
+    Private Function IsValidEmail(addr As String) As Boolean
+        If String.IsNullOrWhiteSpace(addr) Then Return False
+        Try
+            Dim m = New System.Net.Mail.MailAddress(addr)
+            Return String.Equals(m.Address, addr, StringComparison.OrdinalIgnoreCase)
+        Catch
+            Return False
+        End Try
+    End Function
 
     Private Sub PendingMailsAsync()
         Dim senderName As String = "联系人"
@@ -9416,16 +9752,38 @@ UpdateUI:
             End If
 
             Dim item = sourceListView.SelectedItems(0)
-            Dim entryId = TryCast(item.Tag, String)
+            Dim mailId As String = TryCast(item.Tag, String)
 
             ' 只处理有EntryID的邮件项
-            If Not String.IsNullOrEmpty(entryId) Then
-                Debug.WriteLine($"MailHistory_Click: 准备显示邮件 EntryID={entryId}")
-                Debug.WriteLine($"MailHistory_Click: 调用DisplayMailInWebView前，WebView当前内容长度={If(mailBrowser?.DocumentText?.Length, 0)}")
-                DisplayMailInWebView(entryId)
-                Debug.WriteLine($"MailHistory_Click: 调用DisplayMailInWebView后，WebView当前内容长度={If(mailBrowser?.DocumentText?.Length, 0)}")
-            Else
+            If String.IsNullOrEmpty(mailId) Then
                 Debug.WriteLine("MailHistory_Click: EntryID为空")
+                Return
+            End If
+
+            ' 始终更新高亮，不受suppressWebViewUpdate影响
+            If Not mailId.Equals(currentMailEntryID, StringComparison.OrdinalIgnoreCase) Then
+                Debug.WriteLine($"MailHistory_Click: 邮件ID不同，准备更新高亮。旧邮件ID = {currentMailEntryID}, 新邮件ID = {mailId}")
+                Dim oldMailId As String = currentMailEntryID
+                currentMailEntryID = mailId
+                UpdateHighlightByEntryID(oldMailId, mailId)
+                sourceListView.Refresh() ' 强制刷新ListView以确保高亮立即显示
+                Debug.WriteLine("MailHistory_Click: UpdateHighlightByEntryID 已调用。")
+
+                ' 只有在非抑制模式下才加载WebView内容
+                Debug.WriteLine($"MailHistory_Click: suppressWebViewUpdate = {suppressWebViewUpdate}")
+                If suppressWebViewUpdate = 0 Then
+                    Debug.WriteLine($"MailHistory_Click: 开始加载WebView内容，邮件ID = {mailId}")
+                    Me.BeginInvoke(New Action(Of String)(AddressOf LoadMailContentDeferred), mailId)
+                    
+                    ' 立即应用主题到WebBrowser控件本身，确保主题色正确
+                    Dim currentThemeColors As (backgroundColor As Color, foregroundColor As Color) = GetCurrentThemeColors()
+                    UpdateWebBrowserTheme(currentThemeColors.backgroundColor, currentThemeColors.foregroundColor)
+                    Debug.WriteLine($"MailHistory_Click: 已立即应用主题色到WebBrowser控件")
+                Else
+                    Debug.WriteLine($"MailHistory_Click: WebView更新被抑制，suppressWebViewUpdate = {suppressWebViewUpdate}")
+                End If
+            Else
+                Debug.WriteLine($"MailHistory_Click: 邮件ID相同，跳过更新")
             End If
         Catch ex As System.Exception
             Debug.WriteLine($"MailHistory_Click error: {ex.Message}")
@@ -9468,40 +9826,11 @@ UpdateUI:
     ' 在WebView中显示邮件内容
     Private Sub DisplayMailInWebView(entryId As String)
         Try
-            Debug.WriteLine($"DisplayMailInWebView: 开始处理 EntryID={entryId}")
-            
-            ' 检查是否应该抑制WebView更新
-            If suppressWebViewUpdate > 0 Then
-                Debug.WriteLine($"DisplayMailInWebView: WebView更新被抑制，suppressWebViewUpdate = {suppressWebViewUpdate}")
-                Return
-            End If
-
-            Debug.WriteLine($"DisplayMailInWebView: 调用MailHandler.DisplayMailContent")
-            ' 使用统一的MailHandler.DisplayMailContent方法来应用主题样式
-            Dim displayContent As String = OutlookMyList.Handlers.MailHandler.DisplayMailContent(entryId)
-            
-            Debug.WriteLine($"DisplayMailInWebView: MailHandler返回内容长度={If(displayContent?.Length, 0)}")
-            If Not String.IsNullOrEmpty(displayContent) Then
-                ' 检查返回的HTML是否包含主题样式
-                Dim hasThemeStyles As Boolean = displayContent.Contains("background-color") AndAlso displayContent.Contains(globalThemeBackgroundColor)
-                Debug.WriteLine($"DisplayMailInWebView: HTML包含主题样式={hasThemeStyles}")
-                Debug.WriteLine($"DisplayMailInWebView: HTML前100字符={If(displayContent.Length > 100, displayContent.Substring(0, 100), displayContent)}")
-                
-                mailBrowser.DocumentText = displayContent
-                isDisplayingMailContent = True
-                Debug.WriteLine($"DisplayMailInWebView: 成功设置WebView内容，EntryID={entryId}, isDisplayingMailContent={isDisplayingMailContent}")
-                
-                ' 立即应用当前主题到WebBrowser控件
-                Dim currentBgColor As Color = ColorTranslator.FromHtml(globalThemeBackgroundColor)
-                Dim currentFgColor As Color = ColorTranslator.FromHtml(globalThemeForegroundColor)
-                UpdateWebBrowserTheme(currentBgColor, currentFgColor)
-            Else
-                Debug.WriteLine($"DisplayMailInWebView: MailHandler返回空内容，EntryID={entryId}")
-            End If
-
+            Me.BeginInvoke(New Action(Of String)(AddressOf LoadMailContentDeferred), entryId)
+            Dim currentThemeColors As (backgroundColor As Color, foregroundColor As Color) = GetCurrentThemeColors()
+            UpdateWebBrowserTheme(currentThemeColors.backgroundColor, currentThemeColors.foregroundColor)
         Catch ex As System.Exception
             Debug.WriteLine($"DisplayMailInWebView error: {ex.Message}")
-            Debug.WriteLine($"DisplayMailInWebView error stack: {ex.StackTrace}")
         End Try
     End Sub
 

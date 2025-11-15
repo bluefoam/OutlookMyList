@@ -739,9 +739,21 @@ Public Class ThisAddIn
 
             ' 为Inspector创建任务窗格
             Dim inspectorPane As New MailThreadPane()
-            Dim inspectorTaskPane As Microsoft.Office.Tools.CustomTaskPane = Me.CustomTaskPanes.Add(inspectorPane, "相关邮件v1.1", inspector)
+            Dim inspectorTaskPane As Microsoft.Office.Tools.CustomTaskPane = Me.CustomTaskPanes.Add(inspectorPane, "相关邮件v1.2", inspector)
             inspectorTaskPane.Width = 400
             inspectorTaskPane.Visible = True
+
+            Dim isNewMail As Boolean = False
+            Try
+                If TypeOf mailItem Is Outlook.MailItem Then
+                    Dim m As Outlook.MailItem = DirectCast(mailItem, Outlook.MailItem)
+                    isNewMail = String.IsNullOrEmpty(m.EntryID) OrElse Not m.Saved
+                End If
+            Catch ex As System.Exception
+            End Try
+            If isNewMail Then
+                inspectorTaskPane.Visible = False
+            End If
 
             ' 为该Inspector生成唯一标识并存储其任务窗格
             Dim inspectorId As String = inspector.Caption & "|" & inspector.GetHashCode().ToString()
@@ -1342,8 +1354,35 @@ Public Class ThisAddIn
 
             ' If not found in registry, use default value 0 (light/colorful theme)
             If themeValue = -1 Then
-                themeValue = 0
-                Debug.WriteLine("未找到主题设置，使用默认值 0")
+                ' 检测系统深色模式作为备用方案
+                Try
+                    ' 使用Windows API检测系统深色模式
+                    Dim systemDarkMode As Boolean = False
+                    
+                    ' 尝试从注册表检测系统深色模式
+                    Dim systemThemeKey As String = "Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+                    Using systemKey As RegistryKey = Registry.CurrentUser.OpenSubKey(systemThemeKey)
+                        If systemKey IsNot Nothing Then
+                            Dim appsUseLightTheme As Object = systemKey.GetValue("AppsUseLightTheme")
+                            If appsUseLightTheme IsNot Nothing Then
+                                Dim lightTheme As Integer = SafeParseTheme(appsUseLightTheme)
+                                systemDarkMode = (lightTheme = 0)
+                                Debug.WriteLine($"系统深色模式检测: AppsUseLightTheme = {lightTheme}, 深色模式 = {systemDarkMode}")
+                            End If
+                        End If
+                    End Using
+                    
+                    If systemDarkMode Then
+                        themeValue = 2 ' 黑色主题
+                        Debug.WriteLine("使用系统深色模式作为黑色主题")
+                    Else
+                        themeValue = 0 ' 浅色主题
+                        Debug.WriteLine("未找到主题设置，使用默认值 0")
+                    End If
+                Catch
+                    themeValue = 0
+                    Debug.WriteLine("系统深色模式检测失败，使用默认值 0")
+                End Try
             End If
 
             ' If theme changed, update UI
@@ -1791,7 +1830,7 @@ Public Class ThisAddIn
 
     Private Sub InitializeMailPane()
         mailThreadPane = New MailThreadPane()
-        customTaskPane = Me.CustomTaskPanes.Add(mailThreadPane, "相关邮件v1.1")
+        customTaskPane = Me.CustomTaskPanes.Add(mailThreadPane, "相关邮件v1.2")
         customTaskPane.Width = 400
         customTaskPane.Visible = True
 
