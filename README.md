@@ -102,6 +102,28 @@ build.bat
 2. 使用 ClickOnce 部署或手动安装
 3. 确保目标机器安装了必要的运行时组件
 
+### 从 Release 安装到 Outlook（推荐）
+1. 前往 GitHub Releases 页面下载最新版本压缩包（例如：`OutlookMyList-v1.2.4-Release.zip`）。
+2. 下载后，右键压缩包 → 属性 → 勾选“解除阻止” → 应用（避免 Windows 安全区域导致安装失败）。
+3. 解压到任意本地目录（例如：`C:\OutlookMyList-Release\`）。
+4. 在解压目录中双击 `OA-MyList.vsto`，按提示安装（ClickOnce）。
+   - 如遇到“SmartScreen”或“不受信任发布者”提示，选择“更多信息”→“仍要运行”或“安装”。
+5. 安装后启动（或重启）Outlook，插件将自动加载。
+6. 验证加载：Outlook → `文件` → `选项` → `加载项` → 底部“管理：COM 加载项”→“转到…”，确认勾选 `OutlookMyList`。
+
+### 升级/回滚
+- 升级：直接使用新版本中的 `OA-MyList.vsto` 安装，ClickOnce 会自动覆盖旧版本。
+- 回滚：安装旧版本 Release 包的 `OA-MyList.vsto` 即可恢复。
+
+### 卸载
+- 方法一：Outlook → `文件` → `选项` → `加载项` → “COM 加载项”中取消勾选 `OutlookMyList`（仅禁用）。
+- 方法二：控制面板 → `程序和功能` 中查找 `OutlookMyList`，执行卸载（移除安装）。
+
+### 常见问题
+- 双击 `OA-MyList.vsto` 无响应/报错：确认已安装 **.NET Framework 4.7.2** 和 **Visual Studio Tools for Office (VSTO) Runtime**。
+- 安装失败提示安全问题：确保压缩包已“解除阻止”，或在 IT 管理策略允许 ClickOnce 安装的环境下执行。
+- 插件未显示：重启 Outlook，或到 COM 加载项勾选启用。
+
 ## 🎯 使用方法
 
 1. **启动插件**：安装后，Outlook 启动时会自动加载插件
