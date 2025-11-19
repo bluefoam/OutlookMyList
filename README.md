@@ -3,6 +3,7 @@
 一个功能强大的 Microsoft Outlook 插件，用于显示和管理与当前选中邮件相关的邮件线程，提供高效的邮件会话浏览和任务管理功能。
 
 ## 🚀 主要功能
+<img width="324" height="1118" alt="image" src="https://github.com/user-attachments/assets/ff0c493f-8230-479d-8392-fb415460a908" />
 
 ### 📧 相关邮件显示
 - **智能邮件线程检测**：自动识别和显示与当前选中邮件相关的所有邮件
